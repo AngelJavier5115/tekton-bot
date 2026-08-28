@@ -14,11 +14,10 @@ http.createServer((req, res) => {
 
 const supabase = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_KEY);
 
-// CONEXIÓN A DEEPSEEK
-const deepseek = new OpenAI({
-  baseURL: 'https://api.deepseek.com',
-  apiKey: process.env.DEEPSEEK_API_KEY
-});
+// CONEXIÓN OPCIONAL A DEEPSEEK (Evita crash si aún no agregas la API Key)
+const deepseek = process.env.DEEPSEEK_API_KEY 
+  ? new OpenAI({ baseURL: 'https://api.deepseek.com', apiKey: process.env.DEEPSEEK_API_KEY })
+  : null;
 
 const client = new Client({ intents: [GatewayIntentBits.Guilds] });
 
@@ -53,25 +52,29 @@ client.on('interactionCreate', async interaction => {
 
   if (interaction.commandName === 'tekton-nodo') {
     try {
-      await interaction.reply('[Tekton] 🏗️ Analizando y estructurando tu aporte con DeepSeek...');
+      await interaction.deferReply();
+
+      if (!deepseek) {
+        return await interaction.editReply('[Tekton] ⚠️ La API Key de DeepSeek aún no ha sido configurada.');
+      }
+
       const contenido = interaction.options.getString('contenido');
 
       const { data, error } = await supabase
         .from('investigaciones')
         .insert([{
           contenido: contenido,
-          autor: 'tekton',
+          autor: interaction.user.tag,
           tipo: 'aporte',
-          estado: 'postulado'
+          estado: 'pendiente'
         }])
         .select();
 
       if (error) {
-        console.error(error);
-        return await interaction.editReply('[Tekton] ❌ Error al registrar en la red.');
+        return await interaction.editReply(`[Tekton] ❌ Error en base de datos: ${error.message}`);
       }
 
-      await interaction.editReply(`[Tekton] ✅ **Nodo #${data[0].id} estructurado y anclado a la red con éxito.**`);
+      await interaction.editReply(`[Tekton] ✅ **Nodo #${data[0].id} estructurado y anclado a la red.**`);
     } catch (err) {
       console.error('[Tekton] Error en interacción:', err);
       await interaction.editReply('[Tekton] ❌ Ocurrió un error interno.');
