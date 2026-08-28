@@ -1,52 +1,3 @@
-import { Client, GatewayIntentBits, REST, Routes, SlashCommandBuilder } from 'discord.js';
-import { createClient } from '@supabase/supabase-js';
-import OpenAI from 'openai';
-import http from 'http';
-
-// SERVIDOR HTTP PARA PLAN GRATUITO DE RENDER
-const PORT = process.env.PORT || 3000;
-http.createServer((req, res) => {
-  res.writeHead(200, { 'Content-Type': 'text/plain' });
-  res.end('Tekton Bot is active!\n');
-}).listen(PORT, () => {
-  console.log(`[Tekton] Servidor HTTP activo en puerto ${PORT}`);
-});
-
-const supabase = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_KEY);
-
-// CONEXIÓN OPCIONAL A DEEPSEEK (Evita crash si aún no agregas la API Key)
-const deepseek = process.env.DEEPSEEK_API_KEY 
-  ? new OpenAI({ baseURL: 'https://api.deepseek.com', apiKey: process.env.DEEPSEEK_API_KEY })
-  : null;
-
-const client = new Client({ intents: [GatewayIntentBits.Guilds] });
-
-const commands = [
-  new SlashCommandBuilder()
-    .setName('tekton-nodo')
-    .setDescription('Tekton: Registra y estructura un nuevo nodo en la red')
-    .addStringOption(option =>
-      option.setName('contenido')
-        .setDescription('La idea o dato a estructurar')
-        .setRequired(true)
-    )
-].map(cmd => cmd.toJSON());
-
-process.on('unhandledRejection', error => {
-  console.error('[Tekton] Unhandled Rejection:', error);
-});
-
-client.once('ready', async () => {
-  console.log(`[Tekton] Bot en línea como: ${client.user.tag}`);
-  try {
-    const rest = new REST({ version: '10' }).setToken(process.env.DISCORD_TOKEN);
-    await rest.put(Routes.applicationCommands(client.user.id), { body: commands });
-    console.log('[Tekton] Comando /tekton-nodo registrado exitosamente.');
-  } catch (e) {
-    console.error('[Tekton] Error al registrar comando:', e);
-  }
-});
-
 client.on('interactionCreate', async interaction => {
   if (!interaction.isChatInputCommand()) return;
 
@@ -60,7 +11,8 @@ client.on('interactionCreate', async interaction => {
 
       const contenido = interaction.options.getString('contenido');
 
-      const { data, error } = await supabase
+      // --- 1. Insertar el nuevo nodo ---
+      const { data: nuevoNodo, error: insertError } = await supabase
         .from('investigaciones')
         .insert([{
           contenido: contenido,
@@ -70,16 +22,66 @@ client.on('interactionCreate', async interaction => {
         }])
         .select();
 
-      if (error) {
-        return await interaction.editReply(`[Tekton] ❌ Error en base de datos: ${error.message}`);
+      if (insertError) {
+        return await interaction.editReply(`[Tekton] ❌ Error en base de datos: ${insertError.message}`);
       }
 
-      await interaction.editReply(`[Tekton] ✅ **Nodo #${data[0].id} estructurado y anclado a la red.**`);
+      const nodoId = nuevoNodo[0].id;
+      console.log(`[Tekton] Nodo #${nodoId} insertado. Buscando relaciones...`);
+
+      // --- 2. Buscar nodos previos ---
+      const { data: nodosPrevios, error: fetchError } = await supabase
+        .from('investigaciones')
+        .select('id, contenido')
+        .lt('id', nodoId)
+        .order('created_at', { ascending: false })
+        .limit(10);
+
+      if (fetchError) {
+        console.error(`[Tekton] Error al buscar nodos previos:`, fetchError);
+        return await interaction.editReply(`[Tekton] ✅ Nodo #${nodoId} creado, pero no se pudo buscar relaciones.`);
+      }
+
+      // --- 3. Identificar relación conceptual (palabras clave) ---
+      let refId = null;
+      const palabrasClave = contenido
+        .toLowerCase()
+        .replace(/[^\w\s]/gi, '')
+        .split(/\s+/)
+        .filter(p => p.length > 3);
+
+      for (const previo of nodosPrevios || []) {
+        const contenidoPrevio = previo.contenido.toLowerCase();
+        for (const palabra of palabrasClave) {
+          if (contenidoPrevio.includes(palabra)) {
+            refId = previo.id;
+            console.log(`[Tekton] Relación encontrada: #${nodoId} → #${refId} (coincidencia: "${palabra}")`);
+            break;
+          }
+        }
+        if (refId) break;
+      }
+
+      // --- 4. Actualizar ref_id si se encontró relación ---
+      if (refId) {
+        const { error: updateError } = await supabase
+          .from('investigaciones')
+          .update({ ref_id: refId })
+          .eq('id', nodoId);
+
+        if (updateError) {
+          console.error(`[Tekton] Error al actualizar ref_id:`, updateError);
+          await interaction.editReply(`[Tekton] ✅ Nodo #${nodoId} creado, pero no se pudo asignar la relación.`);
+        } else {
+          await interaction.editReply(`[Tekton] ✅ **Nodo #${nodoId} estructurado y relacionado con #${refId}.**`);
+        }
+      } else {
+        await interaction.editReply(`[Tekton] ✅ **Nodo #${nodoId} creado. No se detectaron relaciones previas.**`);
+      }
+
     } catch (err) {
       console.error('[Tekton] Error en interacción:', err);
       await interaction.editReply('[Tekton] ❌ Ocurrió un error interno.');
     }
   }
 });
-
-client.login(process.env.DISCORD_TOKEN);
