@@ -20,7 +20,7 @@ http.createServer((req, res) => {
 const supabase = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_KEY);
 
 // ============================================================
-// CONEXIÓN OPCIONAL A DEEPSEEK (EVITA CRASH SI NO HAY API KEY)
+// CONEXIÓN A DEEPSEEK (OPCIONAL, EVITA CRASH SI FALTA API KEY)
 // ============================================================
 const deepseek = process.env.DEEPSEEK_API_KEY
   ? new OpenAI({ baseURL: 'https://api.deepseek.com', apiKey: process.env.DEEPSEEK_API_KEY })
@@ -74,21 +74,16 @@ client.once('ready', async () => {
 // LÓGICA PRINCIPAL: PROCESAR NUEVOS NODOS
 // ============================================================
 client.on('interactionCreate', async interaction => {
-  // Verificar que sea un comando de chat
   if (!interaction.isChatInputCommand()) return;
-
-  // Solo responder al comando /tekton-nodo
   if (interaction.commandName !== 'tekton-nodo') return;
 
   try {
     await interaction.deferReply();
 
-    // Verificar que la API Key de DeepSeek esté configurada
     if (!deepseek) {
       return await interaction.editReply('[Tekton] ⚠️ La API Key de DeepSeek aún no ha sido configurada.');
     }
 
-    // Obtener el contenido del nodo
     const contenido = interaction.options.getString('contenido');
 
     // --- PASO 1: Insertar el nuevo nodo en Supabase ---
@@ -98,7 +93,7 @@ client.on('interactionCreate', async interaction => {
         contenido: contenido,
         autor: interaction.user.tag,
         tipo: 'aporte',
-        estado: 'pendiente'
+        estado: 'postulado'  // ✅ CORREGIDO: antes decía 'pendiente'
       }])
       .select();
 
@@ -131,7 +126,6 @@ client.on('interactionCreate', async interaction => {
       .split(/\s+/)
       .filter(p => p.length > 3);
 
-    // Recorrer nodos previos buscando coincidencias
     for (const previo of nodosPrevios || []) {
       const contenidoPrevio = previo.contenido.toLowerCase();
       for (const palabra of palabrasClave) {
