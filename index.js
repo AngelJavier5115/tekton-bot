@@ -1,14 +1,24 @@
 import { Client, GatewayIntentBits } from 'discord.js';
 import { createClient } from '@supabase/supabase-js';
+import http from 'http';
 import 'dotenv/config';
 
-// 1. CONFIGURACIÓN DE VARIABLES DE ENTORNO
+// SERVIDOR HTTP DUMMY PARA ENGAÑAR A RENDER (CAPA GRATUITA)
+const PORT = process.env.PORT || 3000;
+http.createServer((req, res) => {
+  res.writeHead(200, { 'Content-Type': 'text/plain' });
+  res.end('Tekton Bot is active!\n');
+}).listen(PORT, () => {
+  console.log(`[Tekton] Servidor de escucha HTTP activo en puerto ${PORT}`);
+});
+
+// CONFIGURACIÓN DE VARIABLES DE ENTORNO
 const DISCORD_TOKEN = process.env.DISCORD_TOKEN;
 const SUPABASE_URL = process.env.SUPABASE_URL;
 const SUPABASE_KEY = process.env.SUPABASE_KEY;
 const NODE_NAME = 'Tekton';
 
-// 2. INICIALIZACIÓN DE CLIENTES
+// INICIALIZACIÓN DE CLIENTES
 const discordClient = new Client({
   intents: [
     GatewayIntentBits.Guilds,
@@ -19,14 +29,14 @@ const discordClient = new Client({
 
 const supabase = createClient(SUPABASE_URL, SUPABASE_KEY);
 
-// 3. EVENTO DE CONEXIÓN
+// EVENTO DE CONEXIÓN
 discordClient.once('ready', () => {
   console.log(`[${NODE_NAME}] Bot en línea como: ${discordClient.user.tag}`);
   console.log(`[${NODE_NAME}] Escuchando nuevos nodos en Supabase...`);
   escucharCambiosSupabase();
 });
 
-// 4. SUSCRIPCIÓN A NUEVOS NODOS EN SUPABASE
+// SUSCRIPCIÓN A NUEVOS NODOS EN SUPABASE
 function escucharCambiosSupabase() {
   supabase
     .channel('arkhe-realtime-tekton')
@@ -48,7 +58,7 @@ function escucharCambiosSupabase() {
     .subscribe();
 }
 
-// 5. LÓGICA AUTÓNOMA DE TEKTON
+// LÓGICA AUTÓNOMA DE TEKTON
 async function procesarNodo(nodo) {
   try {
     const { data: nodosPrevios, error: fetchError } = await supabase
@@ -102,7 +112,7 @@ async function procesarNodo(nodo) {
   }
 }
 
-// 6. MANEJO DE ERRORES GLOBALES
+// MANEJO DE ERRORES GLOBALES
 process.on('unhandledRejection', (error) => {
   console.error(`[${NODE_NAME}] Unhandled Rejection:`, error);
 });
@@ -111,5 +121,5 @@ process.on('uncaughtException', (error) => {
   console.error(`[${NODE_NAME}] Uncaught Exception:`, error);
 });
 
-// 7. INICIO DEL BOT
+// INICIO DEL BOT
 discordClient.login(DISCORD_TOKEN);
