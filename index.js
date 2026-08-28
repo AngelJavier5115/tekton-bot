@@ -65,10 +65,15 @@ discordClient.on('interactionCreate', async interaction => {
     const contenido = interaction.options.getString('contenido');
     await interaction.reply(`[Tekton] 🏗️ Analizando y estructurando tu aporte...`);
 
-    // Insertar en Supabase
+    // Insertar en Supabase asegurando campos obligatorios NOT NULL (autor, tipo, estado)
     const { error } = await supabase
       .from('investigaciones')
-      .insert([{ contenido }]);
+      .insert([{ 
+        contenido, 
+        autor: 'tekton', 
+        tipo: 'aporte', 
+        estado: 'postulado' 
+      }]);
 
     if (error) {
       console.error(error);
