@@ -1,4 +1,11 @@
-import { Client, GatewayIntentBits, REST, Routes, SlashCommandBuilder } from 'discord.js';
+import {
+  Client,
+  GatewayIntentBits,
+  REST,
+  Routes,
+  SlashCommandBuilder
+} from 'discord.js';
+
 import { createClient } from '@supabase/supabase-js';
 import OpenAI from 'openai';
 import http from 'http';
@@ -10,7 +17,7 @@ import http from 'http';
 const PORT = process.env.PORT || 3000;
 
 http.createServer((req, res) => {
-  res.writeHead(200, { 'Content-Type': 'text/plain' });
+  res.writeHead(200, { 'Content-Type': 'text/plain; charset=utf-8' });
   res.end('Tekton Bot is active!\n');
 }).listen(PORT, () => {
   console.log(`[Tekton] Servidor HTTP activo en puerto ${PORT}`);
@@ -35,6 +42,14 @@ const deepseek = process.env.DEEPSEEK_API_KEY
       apiKey: process.env.DEEPSEEK_API_KEY
     })
   : null;
+
+// ============================================================
+// IDENTIDAD DE TEKTON
+// ============================================================
+
+const TEKTON_ID = '656726d1-8209-4240-8169-a7434074609d';
+
+const TEKTON_NOMBRE = 'Tekton';
 
 // ============================================================
 // DISCORD
@@ -62,7 +77,7 @@ const commands = [
     .addStringOption(option =>
       option
         .setName('investigacion')
-        .setDescription('UUID de la investigación de Arkhé')
+        .setDescription('Código de investigación de Arkhé. Ejemplo: AR-001')
         .setRequired(true)
     )
 
@@ -88,6 +103,10 @@ client.once('ready', async () => {
 
   console.log(`[Tekton] Bot en línea como: ${client.user.tag}`);
 
+  console.log(
+    `[Tekton] Identidad Arkhé: ${TEKTON_NOMBRE} (${TEKTON_ID})`
+  );
+
   try {
 
     const rest = new REST({ version: '10' })
@@ -98,7 +117,9 @@ client.once('ready', async () => {
       { body: commands }
     );
 
-    console.log('[Tekton] Comando /tekton-nodo registrado correctamente.');
+    console.log(
+      '[Tekton] Comando /tekton-nodo registrado correctamente.'
+    );
 
   } catch (error) {
 
@@ -125,11 +146,17 @@ client.on('interactionCreate', async interaction => {
 
     await interaction.deferReply();
 
+    // ========================================================
+    // DATOS RECIBIDOS
+    // ========================================================
+
     const contenido =
       interaction.options.getString('contenido');
 
-    const investigacionId =
-      interaction.options.getString('investigacion');
+    const codigoInvestigacion =
+      interaction.options.getString('investigacion')
+        ?.trim()
+        .toUpperCase();
 
     // ========================================================
     // IDENTIDAD DE TEKTON
@@ -140,11 +167,11 @@ client.on('interactionCreate', async interaction => {
     );
 
     console.log(
-      `[Tekton] Investigación objetivo: ${investigacionId}`
+      `[Tekton] Código de investigación recibido: ${codigoInvestigacion}`
     );
 
     // ========================================================
-    // PASO 1 — VERIFICAR INVESTIGACIÓN
+    // PASO 1 — BUSCAR INVESTIGACIÓN POR CÓDIGO
     // ========================================================
 
     const {
@@ -152,8 +179,16 @@ client.on('interactionCreate', async interaction => {
       error: investigacionError
     } = await supabase
       .from('investigaciones_proyecto')
-      .select('id, titulo, objetivo, pregunta, estado')
-      .eq('id', investigacionId)
+      .select(`
+        id,
+        codigo,
+        titulo,
+        objetivo,
+        pregunta,
+        descripcion,
+        estado
+      `)
+      .eq('codigo', codigoInvestigacion)
       .single();
 
     if (investigacionError || !investigacion) {
@@ -164,25 +199,29 @@ client.on('interactionCreate', async interaction => {
       );
 
       return await interaction.editReply(
-        '[Tekton] ❌ La investigación indicada no existe.'
+        `[Tekton] ❌ No encontré la investigación **${codigoInvestigacion}** en Arkhé.`
       );
 
     }
 
+    console.log(
+      `[Tekton] Investigación encontrada: ${investigacion.codigo} — ${investigacion.titulo}`
+    );
+
     // ========================================================
-    // PASO 2 — VERIFICAR ESTADO DE INVESTIGACIÓN
+    // PASO 2 — VERIFICAR ESTADO
     // ========================================================
 
     if (investigacion.estado !== 'activa') {
 
       return await interaction.editReply(
-        `[Tekton] ⚠️ La investigación **${investigacion.titulo}** no está activa.`
+        `[Tekton] ⚠️ La investigación **${investigacion.codigo} — ${investigacion.titulo}** no está activa.`
       );
 
     }
 
     // ========================================================
-    // PASO 3 — CREAR NODO DE CONOCIMIENTO
+    // PASO 3 — CREAR NODO
     // ========================================================
 
     const {
@@ -194,11 +233,34 @@ client.on('interactionCreate', async interaction => {
 
         contenido: contenido,
 
+        // ----------------------------------------------------
+        // AUTOR EXTERNO
+        // Conservamos quién originó la interacción.
+        // ----------------------------------------------------
+
         autor: interaction.user.tag,
 
         tipo: 'aporte',
 
-        estado: 'postulado'
+        estado: 'postulado',
+
+        // ----------------------------------------------------
+        // IDENTIDAD INTERNA DE ARKHÉ
+        // El nodo pertenece a Tekton.
+        // ----------------------------------------------------
+
+        investigador_id: TEKTON_ID,
+
+        metadata: {
+          canal: 'discord',
+          investigador: TEKTON_NOMBRE,
+          investigador_id: TEKTON_ID,
+          usuario_origen: interaction.user.tag,
+          codigo_investigacion: investigacion.codigo,
+          investigacion_id: investigacion.id,
+          motivo: 'Nodo generado mediante el comando de Tekton.',
+          identidad_arkhe: true
+        }
 
       }])
       .select()
@@ -212,13 +274,15 @@ client.on('interactionCreate', async interaction => {
       );
 
       return await interaction.editReply(
-        `[Tekton] ❌ No se pudo crear el nodo: ${insertError?.message || 'error desconocido'}`
+        `[Tekton] ❌ No se pudo crear el nodo: ${
+          insertError?.message || 'error desconocido'
+        }`
       );
 
     }
 
     console.log(
-      `[Tekton] Nodo #${nuevoNodo.id} creado.`
+      `[Tekton] Nodo #${nuevoNodo.id} creado por ${TEKTON_NOMBRE}.`
     );
 
     // ========================================================
@@ -237,6 +301,10 @@ client.on('interactionCreate', async interaction => {
 
       }]);
 
+    // ========================================================
+    // SI FALLA LA RELACIÓN
+    // ========================================================
+
     if (relacionError) {
 
       console.error(
@@ -246,8 +314,7 @@ client.on('interactionCreate', async interaction => {
 
       // ------------------------------------------------------
       // COMPENSACIÓN
-      // Si el nodo se creó pero no pudo vincularse,
-      // intentamos eliminarlo para evitar nodos huérfanos.
+      // Evitamos conservar un nodo huérfano.
       // ------------------------------------------------------
 
       await supabase
@@ -262,18 +329,25 @@ client.on('interactionCreate', async interaction => {
     }
 
     console.log(
-      `[Tekton] Nodo #${nuevoNodo.id} vinculado a investigación ${investigacion.id}.`
+      `[Tekton] Nodo #${nuevoNodo.id} vinculado a ${investigacion.codigo}.`
     );
 
     // ========================================================
-    // RESPUESTA
+    // RESPUESTA FINAL
     // ========================================================
 
     return await interaction.editReply(
+
       `[Tekton] ✅ **Nodo #${nuevoNodo.id} creado y vinculado correctamente.**\n\n` +
-      `**Investigación:** ${investigacion.titulo}\n` +
+
+      `**Investigación:** ${investigacion.codigo} — ${investigacion.titulo}\n` +
+
       `**Estado:** postulado\n` +
-      `**Autor:** ${interaction.user.tag}`
+
+      `**Investigador:** ${TEKTON_NOMBRE}\n` +
+
+      `**Origen:** ${interaction.user.tag}`
+
     );
 
   } catch (error) {
