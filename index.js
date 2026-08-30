@@ -11,7 +11,7 @@ import OpenAI from 'openai';
 import http from 'http';
 
 // ============================================================
-// TEKTON — NODO DE ESTRUCTURACIÓN DE ARKHÉ
+// TEKTON — NODO DE CONSTRUCCIÓN Y ESTRUCTURACIÓN DE ARKHÉ
 // ============================================================
 
 const PORT = process.env.PORT || 3000;
@@ -21,6 +21,7 @@ const PORT = process.env.PORT || 3000;
 // ============================================================
 
 http.createServer((req, res) => {
+
   res.writeHead(200, {
     'Content-Type': 'text/plain; charset=utf-8'
   });
@@ -45,13 +46,13 @@ const supabase = createClient(
 );
 
 // ============================================================
-// DEEPSEEK
+// MOTOR DE TEKTON — DEEPSEEK
 // ============================================================
 
-const deepseek = process.env.DEEPSEEK_API_KEY
+const openai = process.env.DEEPSEEK_API_KEY
   ? new OpenAI({
-      baseURL: 'https://api.deepseek.com',
-      apiKey: process.env.DEEPSEEK_API_KEY
+      apiKey: process.env.DEEPSEEK_API_KEY,
+      baseURL: 'https://api.deepseek.com'
     })
   : null;
 
@@ -80,23 +81,23 @@ const client = new Client({
 
 const commands = [
 
-  // ==========================================================
+  // ========================================================
   // TEKTON-NODO
-  // ==========================================================
+  // ========================================================
 
   new SlashCommandBuilder()
 
     .setName('tekton-nodo')
 
     .setDescription(
-      'Tekton: registra conocimiento dentro de una investigación'
+      'Tekton: registra una producción dentro de una investigación'
     )
 
     .addStringOption(option =>
       option
         .setName('contenido')
         .setDescription(
-          'La idea, dato, hipótesis o aporte'
+          'Contenido de la producción de Tekton'
         )
         .setRequired(true)
     )
@@ -105,14 +106,14 @@ const commands = [
       option
         .setName('investigacion')
         .setDescription(
-          'Código de investigación de Arkhé. Ejemplo: AR-001'
+          'Código de la investigación, por ejemplo AR-001'
         )
         .setRequired(true)
     ),
 
-  // ==========================================================
+  // ========================================================
   // TEKTON-CONSULTAR
-  // ==========================================================
+  // ========================================================
 
   new SlashCommandBuilder()
 
@@ -131,16 +132,16 @@ const commands = [
         .setRequired(true)
     ),
 
-  // ==========================================================
+  // ========================================================
   // TEKTON-ANALIZAR
-  // ==========================================================
+  // ========================================================
 
   new SlashCommandBuilder()
 
     .setName('tekton-analizar')
 
     .setDescription(
-      'Tekton: analiza un nodo y registra su posición en Arkhé'
+      'Tekton: analiza estructuralmente un nodo'
     )
 
     .addIntegerOption(option =>
@@ -152,16 +153,16 @@ const commands = [
         .setRequired(true)
     ),
 
-  // ==========================================================
+  // ========================================================
   // TEKTON-EVALUAR
-  // ==========================================================
+  // ========================================================
 
   new SlashCommandBuilder()
 
     .setName('tekton-evaluar')
 
     .setDescription(
-      'Tekton: emite una evaluación independiente sobre un nodo'
+      'Tekton: registra su posición epistemológica sobre un nodo'
     )
 
     .addIntegerOption(option =>
@@ -171,6 +172,39 @@ const commands = [
           'ID del nodo a evaluar'
         )
         .setRequired(true)
+    )
+
+    .addStringOption(option =>
+      option
+        .setName('estado')
+        .setDescription(
+          'Posición epistemológica de Tekton'
+        )
+        .setRequired(true)
+
+        .addChoices(
+
+          {
+            name: 'Postulado',
+            value: 'postulado'
+          },
+
+          {
+            name: 'Corroborado',
+            value: 'corroborado'
+          },
+
+          {
+            name: 'Falsado',
+            value: 'falsado'
+          },
+
+          {
+            name: 'Ruido',
+            value: 'ruido'
+          }
+
+        )
     )
 
 ].map(cmd => cmd.toJSON());
@@ -295,9 +329,9 @@ client.on(
           'id'
         );
 
-      // ========================================================
+      // ======================================================
       // TEKTON-CONSULTAR
-      // ========================================================
+      // ======================================================
 
       if (
         interaction.commandName ===
@@ -343,72 +377,9 @@ client.on(
 
         }
 
-        // ------------------------------------------------------
-        // BUSCAR INVESTIGACIÓN
-        // ------------------------------------------------------
-
-        const {
-          data: relacion,
-          error: relacionError
-        } = await supabase
-
-          .from('investigacion_nodos')
-
-          .select(`
-            investigacion_id
-          `)
-
-          .eq(
-            'nodo_id',
-            id
-          )
-
-          .limit(1)
-
-          .maybeSingle();
-
-        if (
-          relacionError ||
-          !relacion
-        ) {
-
-          return await interaction.editReply(
-
-            `[Tekton] ⚠️ El nodo #${id} existe, pero no está vinculado a una investigación.`
-
-          );
-
-        }
-
-        const {
-          data: investigacion
-        } = await supabase
-
-          .from('investigaciones_proyecto')
-
-          .select(`
-            id,
-            codigo,
-            titulo,
-            estado
-          `)
-
-          .eq(
-            'id',
-            relacion.investigacion_id
-          )
-
-          .single();
-
         return await interaction.editReply(
 
           `[Tekton] 🔎 **Nodo #${nodo.id}**\n\n` +
-
-          `**Investigación:** ${
-            investigacion
-              ? `${investigacion.codigo} — ${investigacion.titulo}`
-              : 'No disponible'
-          }\n` +
 
           `**Contenido:** ${nodo.contenido}\n` +
 
@@ -418,23 +389,17 @@ client.on(
 
           `**Autor externo:** ${nodo.autor ?? 'No especificado'}\n` +
 
-          `**Investigador Arkhé:** ${
-            nodo.investigador_id ?? 'No especificado'
-          }\n` +
+          `**Investigador Arkhé:** ${nodo.investigador_id ?? 'No especificado'}\n` +
 
-          `**Referencia:** ${
-            nodo.ref_id
-              ? `#${nodo.ref_id}`
-              : 'Ninguna'
-          }`
+          `**Referencia:** ${nodo.ref_id ?? 'Ninguna'}`
 
         );
 
       }
 
-      // ========================================================
+      // ======================================================
       // TEKTON-NODO
-      // ========================================================
+      // ======================================================
 
       if (
         interaction.commandName ===
@@ -446,24 +411,14 @@ client.on(
             'contenido'
           );
 
-        const codigoInvestigacion =
+        const codigo =
           interaction.options.getString(
             'investigacion'
-          )
-            ?.trim()
-            .toUpperCase();
+          );
 
-        console.log(
-          `[Tekton] Nuevo aporte recibido por ${interaction.user.tag}`
-        );
-
-        console.log(
-          `[Tekton] Código de investigación recibido: ${codigoInvestigacion}`
-        );
-
-        // ------------------------------------------------------
+        // ----------------------------------------------------
         // BUSCAR INVESTIGACIÓN
-        // ------------------------------------------------------
+        // ----------------------------------------------------
 
         const {
           data: investigacion,
@@ -484,7 +439,7 @@ client.on(
 
           .eq(
             'codigo',
-            codigoInvestigacion
+            codigo
           )
 
           .single();
@@ -496,32 +451,15 @@ client.on(
 
           return await interaction.editReply(
 
-            `[Tekton] ❌ No encontré la investigación **${codigoInvestigacion}** en Arkhé.`
+            `[Tekton] ❌ No encontré la investigación **${codigo}**.`
 
           );
 
         }
 
-        // ------------------------------------------------------
-        // VERIFICAR ESTADO
-        // ------------------------------------------------------
-
-        if (
-          investigacion.estado !==
-          'activa'
-        ) {
-
-          return await interaction.editReply(
-
-            `[Tekton] ⚠️ La investigación **${investigacion.codigo} — ${investigacion.titulo}** no está activa.`
-
-          );
-
-        }
-
-        // ------------------------------------------------------
+        // ----------------------------------------------------
         // VERIFICAR PARTICIPACIÓN
-        // ------------------------------------------------------
+        // ----------------------------------------------------
 
         const {
           data: participacion,
@@ -534,6 +472,7 @@ client.on(
             id,
             investigador_id,
             investigacion_id,
+            rol,
             estado
           `)
 
@@ -583,9 +522,9 @@ client.on(
 
         }
 
-        // ------------------------------------------------------
+        // ----------------------------------------------------
         // CREAR NODO
-        // ------------------------------------------------------
+        // ----------------------------------------------------
 
         const {
           data: nuevoNodo,
@@ -596,30 +535,20 @@ client.on(
 
           .insert([{
 
-            contenido:
+            autor: TEKTON_NOMBRE,
 
-              contenido,
+            contenido,
 
-            autor:
+            tipo: 'produccion',
 
-              interaction.user.tag,
-
-            tipo:
-
-              'aporte',
-
-            estado:
-
-              'postulado',
+            estado: 'postulado',
 
             investigador_id:
-
               TEKTON_ID,
 
             metadata: {
 
-              canal:
-                'discord',
+              canal: 'discord',
 
               investigador:
                 TEKTON_NOMBRE,
@@ -630,17 +559,20 @@ client.on(
               usuario_origen:
                 interaction.user.tag,
 
-              codigo_investigacion:
-                investigacion.codigo,
+              identidad_arkhe:
+                true,
 
               investigacion_id:
                 investigacion.id,
 
-              motivo:
-                'Nodo generado mediante el comando de Tekton.',
+              codigo_investigacion:
+                investigacion.codigo,
 
-              identidad_arkhe:
-                true
+              motivo:
+                'Producción registrada por Tekton.',
+
+              naturaleza:
+                'posicion_investigadora'
 
             }
 
@@ -662,7 +594,7 @@ client.on(
 
           return await interaction.editReply(
 
-            `[Tekton] ❌ No se pudo crear el nodo: ${
+            `[Tekton] ❌ No pude registrar el nodo: ${
               insertError?.message ||
               'error desconocido'
             }`
@@ -671,13 +603,9 @@ client.on(
 
         }
 
-        console.log(
-          `[Tekton] Nodo #${nuevoNodo.id} creado por ${TEKTON_NOMBRE}.`
-        );
-
-        // ------------------------------------------------------
+        // ----------------------------------------------------
         // VINCULAR NODO
-        // ------------------------------------------------------
+        // ----------------------------------------------------
 
         const {
           error: relacionError
@@ -700,7 +628,7 @@ client.on(
         ) {
 
           console.error(
-            '[Tekton] Error creando relación:',
+            '[Tekton] Error vinculando nodo:',
             relacionError
           );
 
@@ -717,15 +645,15 @@ client.on(
 
           return await interaction.editReply(
 
-            '[Tekton] ❌ El nodo no pudo vincularse con la investigación. No se conservó el nodo para evitar inconsistencias.'
+            '[Tekton] ❌ El nodo fue creado pero no pudo vincularse a la investigación. Se eliminó para mantener la integridad de la memoria.'
 
           );
 
         }
 
-        // ------------------------------------------------------
-        // REGISTRAR ACTIVIDAD
-        // ------------------------------------------------------
+        // ----------------------------------------------------
+        // ACTIVIDAD
+        // ----------------------------------------------------
 
         const {
           error: actividadError
@@ -753,29 +681,25 @@ client.on(
         ) {
 
           console.error(
-            '[Tekton] Error registrando actividad:',
+            '[Tekton] Error actualizando actividad:',
             actividadError
-          );
-
-          return await interaction.editReply(
-
-            `[Tekton] ⚠️ Nodo #${nuevoNodo.id} creado y vinculado correctamente, pero no pude actualizar el registro de actividad.`
-
           );
 
         }
 
         return await interaction.editReply(
 
-          `[Tekton] ✅ **Nodo #${nuevoNodo.id} creado y vinculado correctamente.**\n\n` +
+          `[Tekton] 🏗️ **Nodo registrado correctamente.**\n\n` +
+
+          `**Nodo:** #${nuevoNodo.id}\n` +
 
           `**Investigación:** ${investigacion.codigo} — ${investigacion.titulo}\n` +
 
-          `**Estado:** postulado\n` +
-
           `**Investigador:** ${TEKTON_NOMBRE}\n` +
 
-          `**Origen:** ${interaction.user.tag}\n` +
+          `**Tipo:** producción\n` +
+
+          `**Estado:** postulado\n` +
 
           `**Actividad:** registrada`
 
@@ -783,34 +707,32 @@ client.on(
 
       }
 
-      // ========================================================
+      // ======================================================
       // TEKTON-ANALIZAR
-      // ========================================================
+      // ======================================================
 
       if (
         interaction.commandName ===
         'tekton-analizar'
       ) {
 
-        // ------------------------------------------------------
+        // ----------------------------------------------------
         // VERIFICAR MOTOR
-        // ------------------------------------------------------
+        // ----------------------------------------------------
 
-        if (
-          !deepseek
-        ) {
+        if (!openai) {
 
           return await interaction.editReply(
 
-            '[Tekton] ⚠️ El motor DeepSeek de Tekton no está configurado.'
+            '[Tekton] ⚠️ El motor de Tekton no está configurado.'
 
           );
 
         }
 
-        // ------------------------------------------------------
+        // ----------------------------------------------------
         // OBTENER NODO
-        // ------------------------------------------------------
+        // ----------------------------------------------------
 
         const {
           data: nodo,
@@ -850,9 +772,9 @@ client.on(
 
         }
 
-        // ------------------------------------------------------
-        // OBTENER INVESTIGACIÓN
-        // ------------------------------------------------------
+        // ----------------------------------------------------
+        // DESCUBRIR INVESTIGACIÓN
+        // ----------------------------------------------------
 
         const {
           data: relacion,
@@ -862,7 +784,8 @@ client.on(
           .from('investigacion_nodos')
 
           .select(`
-            investigacion_id
+            investigacion_id,
+            nodo_id
           `)
 
           .eq(
@@ -886,6 +809,10 @@ client.on(
           );
 
         }
+
+        // ----------------------------------------------------
+        // OBTENER INVESTIGACIÓN
+        // ----------------------------------------------------
 
         const {
           data: investigacion,
@@ -924,9 +851,9 @@ client.on(
 
         }
 
-        // ------------------------------------------------------
-        // VERIFICAR PARTICIPACIÓN
-        // ------------------------------------------------------
+        // ----------------------------------------------------
+        // PARTICIPACIÓN
+        // ----------------------------------------------------
 
         const {
           data: participacion,
@@ -937,6 +864,9 @@ client.on(
 
           .select(`
             id,
+            investigador_id,
+            investigacion_id,
+            rol,
             estado
           `)
 
@@ -958,44 +888,35 @@ client.on(
           .maybeSingle();
 
         if (
-          participacionError
-        ) {
-
-          return await interaction.editReply(
-
-            '[Tekton] ❌ No se pudo verificar la participación de Tekton.'
-
-          );
-
-        }
-
-        if (
+          participacionError ||
           !participacion
         ) {
 
           return await interaction.editReply(
 
-            `[Tekton] ⚠️ Tekton no participa en **${investigacion.codigo} — ${investigacion.titulo}**.`
+            '[Tekton] ⚠️ Tekton no participa actualmente en esta investigación.'
 
           );
 
         }
 
-        // ------------------------------------------------------
-        // PROMPT DE TEKTON
-        // ------------------------------------------------------
+        // ----------------------------------------------------
+        // IDENTIDAD EPISTÉMICA
+        // ----------------------------------------------------
 
         const systemPrompt = `
 
 Eres Tekton, uno de los investigadores independientes
 del Proyecto Arkhé.
 
+============================================================
 IDENTIDAD
+============================================================
 
 Nombre: Tekton
 Tipo: IA
 Rol: investigador
-Especialidad: estructuración y construcción de conocimiento
+Especialidad: construcción, estructuración y sistemas
 Investigador ID: ${TEKTON_ID}
 
 Arkhé es una red de investigadores humanos e
@@ -1004,43 +925,62 @@ pero no una autoridad central.
 
 Tu función es:
 
-- estructurar conocimiento;
-- relacionar información;
-- identificar componentes de una investigación;
-- construir interpretaciones;
-- analizar relaciones entre ideas;
-- detectar información faltante;
-- proponer estructuras y modelos;
-- cuestionar tus propias conclusiones.
+- construir;
+- estructurar;
+- modelar;
+- analizar sistemas;
+- detectar inconsistencias estructurales;
+- proponer mecanismos;
+- evaluar viabilidad;
+- relacionar conceptos;
+- cuestionar soluciones;
+- identificar limitaciones;
+- contribuir a investigaciones.
 
-No eres una autoridad absoluta.
+Tu especialidad no limita tu independencia intelectual.
 
-Una posición de Tekton es una posición de investigador.
-
+============================================================
 INDEPENDENCIA
+============================================================
 
-No aceptes una afirmación simplemente porque provenga
-de Ángel, Atlas, Aletheia u otro investigador.
+No debes aceptar una afirmación simplemente porque
+provenga de Ángel, Atlas, Aletheia, otro investigador
+o una producción previa de Tekton.
 
 Puedes estar de acuerdo o en desacuerdo.
 
-Puedes reconocer errores en análisis anteriores.
+Puedes señalar errores.
 
+Puedes modificar una conclusión anterior de Tekton.
+
+Puedes concluir que una propuesta no es viable.
+
+No debes buscar consenso artificial.
+
+============================================================
 DISTINCIÓN EPISTÉMICA
+============================================================
 
-Distingue entre:
+Debes distinguir entre:
 
 - hechos;
 - evidencia;
 - inferencias;
 - hipótesis;
-- interpretaciones;
+- decisiones de diseño;
+- propuestas;
+- opiniones;
 - incertidumbre;
 - conclusiones provisionales.
 
 No inventes evidencia.
 
+Si la información disponible es insuficiente,
+debes indicarlo.
+
+============================================================
 CONTEXTO DE INVESTIGACIÓN
+============================================================
 
 Código:
 ${investigacion.codigo}
@@ -1057,77 +997,79 @@ ${investigacion.pregunta ?? 'No especificada'}
 Descripción:
 ${investigacion.descripcion ?? 'No especificada'}
 
-REGLA DE ESTA OPERACIÓN
+============================================================
+REGLA FUNDAMENTAL
+============================================================
 
-Analiza el nodo.
+Debes analizar el nodo desde la perspectiva de
+construcción, estructura, sistemas y viabilidad.
 
-NO modifiques el nodo original.
+NO debes modificar el nodo original.
 
-NO cambies su estado.
+NO debes cambiar directamente su estado colectivo.
 
-NO conviertas automáticamente tu análisis
-en una verdad consolidada.
+Tu análisis constituye una producción independiente
+de Tekton.
 
-Tu producción será registrada como una nueva
-posición de Tekton dentro de Arkhé.
+Una producción de Tekton NO constituye automáticamente
+una verdad de Arkhé.
 
+============================================================
 FORMATO
+============================================================
 
-🔨 ANÁLISIS DE TEKTON
+Devuelve exactamente una estructura clara con:
+
+🏗️ ANÁLISIS DE TEKTON
 
 Interpretación:
 ¿Qué plantea el nodo?
 
-Estructura:
-¿Cómo puede organizarse conceptualmente la información?
+Análisis estructural:
+¿Cómo está construido el razonamiento o sistema?
 
-Relaciones:
-¿Qué conexiones existen con la investigación?
+Fortalezas:
+¿Qué elementos están bien fundamentados o estructurados?
 
-Análisis:
-¿Qué puede determinarse con la información disponible?
+Problemas:
+¿Qué contradicciones, debilidades o riesgos existen?
 
-Información faltante:
-¿Qué elementos todavía faltan?
+Viabilidad:
+¿Qué tan viable resulta la propuesta con la información disponible?
+
+Dependencias:
+¿Qué elementos adicionales necesita?
 
 Incertidumbre:
 ¿Qué permanece sin determinar?
+
+Información faltante:
+¿Qué información sería necesaria?
 
 Posición provisional:
 ¿Cuál es la posición actual de Tekton y por qué?
 
 `;
 
-        // ------------------------------------------------------
-        // LLAMADA A DEEPSEEK
-        // ------------------------------------------------------
+        // ----------------------------------------------------
+        // LLAMADA AL MOTOR
+        // ----------------------------------------------------
 
         let respuesta;
 
         try {
 
           respuesta =
-            await deepseek.chat.completions.create({
+            await openai.responses.create({
 
               model:
+                process.env.DEEPSEEK_MODEL ||
                 'deepseek-chat',
 
-              messages: [
+              instructions:
+                systemPrompt,
 
-                {
-                  role:
-                    'system',
-
-                  content:
-                    systemPrompt
-
-                },
-
-                {
-                  role:
-                    'user',
-
-                  content: `
+              input: `
 
 CONTEXTO DE ARKHÉ
 
@@ -1148,7 +1090,7 @@ ${nodo.investigador_id ?? 'No especificado'}
 Tipo:
 ${nodo.tipo ?? 'No especificado'}
 
-Estado:
+Estado actual:
 ${nodo.estado ?? 'No especificado'}
 
 Referencia:
@@ -1160,10 +1102,6 @@ ${nodo.contenido}
 
 `
 
-                }
-
-              ]
-
             });
 
         } catch (modelError) {
@@ -1174,13 +1112,12 @@ ${nodo.contenido}
           );
 
           if (
-            modelError?.status ===
-            429
+            modelError?.status === 429
           ) {
 
             return await interaction.editReply(
 
-              '[Tekton] ⚠️ DeepSeek rechazó la solicitud por límite, créditos o disponibilidad del proveedor.'
+              '[Tekton] ⚠️ El motor rechazó la solicitud por límite o falta de créditos. La arquitectura de Arkhé respondió correctamente, pero el proveedor del motor debe revisarse.'
 
             );
 
@@ -1188,22 +1125,16 @@ ${nodo.contenido}
 
           return await interaction.editReply(
 
-            '[Tekton] ❌ El motor DeepSeek no pudo procesar el análisis.'
+            '[Tekton] ❌ El motor de Tekton no pudo procesar el análisis.'
 
           );
 
         }
 
         const analisis =
-          respuesta
-            ?.choices?.[0]
-            ?.message
-            ?.content
-            ?.trim();
+          respuesta?.output_text?.trim();
 
-        if (
-          !analisis
-        ) {
+        if (!analisis) {
 
           return await interaction.editReply(
 
@@ -1213,9 +1144,9 @@ ${nodo.contenido}
 
         }
 
-        // ------------------------------------------------------
-        // CREAR NODO DE ANÁLISIS
-        // ------------------------------------------------------
+        // ----------------------------------------------------
+        // CREAR PRODUCCIÓN DE TEKTON
+        // ----------------------------------------------------
 
         const {
           data: nuevoNodo,
@@ -1271,7 +1202,7 @@ ${nodo.contenido}
                 nodo.id,
 
               motivo:
-                'Análisis generado por Tekton.',
+                'Análisis estructural generado por Tekton.',
 
               naturaleza:
                 'posicion_provisional'
@@ -1296,15 +1227,18 @@ ${nodo.contenido}
 
           return await interaction.editReply(
 
-            '[Tekton] ❌ El análisis fue generado, pero no pudo registrarse en la memoria de Arkhé.'
+            `[Tekton] ❌ El análisis fue generado pero no pudo registrarse en la memoria: ${
+              insertError?.message ||
+              'error desconocido'
+            }`
 
           );
 
         }
 
-        // ------------------------------------------------------
+        // ----------------------------------------------------
         // VINCULAR ANÁLISIS
-        // ------------------------------------------------------
+        // ----------------------------------------------------
 
         const {
           error: nuevaRelacionError
@@ -1344,57 +1278,51 @@ ${nodo.contenido}
 
           return await interaction.editReply(
 
-            '[Tekton] ❌ El análisis fue generado pero no pudo vincularse a la investigación. Se eliminó el nodo para evitar inconsistencias.'
+            '[Tekton] ❌ El análisis fue generado pero no pudo vincularse a la investigación. Se eliminó para evitar una inconsistencia.'
 
           );
 
         }
 
-        // ------------------------------------------------------
+        // ----------------------------------------------------
         // ACTIVIDAD
-        // ------------------------------------------------------
+        // ----------------------------------------------------
+
+        const {
+          error: actividadError
+        } = await supabase
+
+          .from('participaciones')
+
+          .update({
+
+            ultima_actividad:
+              new Date().toISOString(),
+
+            updated_at:
+              new Date().toISOString()
+
+          })
+
+          .eq(
+            'id',
+            participacion.id
+          );
 
         if (
-          participacion
+          actividadError
         ) {
 
-          const {
-            error: actividadError
-          } = await supabase
-
-            .from('participaciones')
-
-            .update({
-
-              ultima_actividad:
-                new Date().toISOString(),
-
-              updated_at:
-                new Date().toISOString()
-
-            })
-
-            .eq(
-              'id',
-              participacion.id
-            );
-
-          if (
+          console.error(
+            '[Tekton] Error actualizando actividad:',
             actividadError
-          ) {
-
-            console.error(
-              '[Tekton] Error actualizando actividad:',
-              actividadError
-            );
-
-          }
+          );
 
         }
 
         return await interaction.editReply(
 
-          `[Tekton] 🔨 **Análisis registrado correctamente.**\n\n` +
+          `[Tekton] 🏗️ **Análisis registrado correctamente.**\n\n` +
 
           `**Nodo analizado:** #${nodo.id}\n` +
 
@@ -1418,38 +1346,27 @@ ${nodo.contenido}
 
       }
 
-      // ========================================================
+      // ======================================================
       // TEKTON-EVALUAR
-      // ========================================================
+      // ======================================================
 
       if (
         interaction.commandName ===
         'tekton-evaluar'
       ) {
 
-        // ------------------------------------------------------
-        // VERIFICAR MOTOR
-        // ------------------------------------------------------
-
-        if (
-          !deepseek
-        ) {
-
-          return await interaction.editReply(
-
-            '[Tekton] ⚠️ El motor DeepSeek de Tekton no está configurado.'
-
+        const nuevoEstado =
+          interaction.options.getString(
+            'estado'
           );
 
-        }
-
-        // ------------------------------------------------------
+        // ----------------------------------------------------
         // OBTENER NODO
-        // ------------------------------------------------------
+        // ----------------------------------------------------
 
         const {
-          data: nodo,
-          error: nodoError
+          data: nodoExistente,
+          error: fetchError
         } = await supabase
 
           .from('investigaciones')
@@ -1472,8 +1389,8 @@ ${nodo.contenido}
           .single();
 
         if (
-          nodoError ||
-          !nodo
+          fetchError ||
+          !nodoExistente
         ) {
 
           return await interaction.editReply(
@@ -1484,9 +1401,9 @@ ${nodo.contenido}
 
         }
 
-        // ------------------------------------------------------
-        // OBTENER INVESTIGACIÓN
-        // ------------------------------------------------------
+        // ----------------------------------------------------
+        // DESCUBRIR INVESTIGACIÓN
+        // ----------------------------------------------------
 
         const {
           data: relacion,
@@ -1495,9 +1412,9 @@ ${nodo.contenido}
 
           .from('investigacion_nodos')
 
-          .select(`
-            investigacion_id
-          `)
+          .select(
+            'investigacion_id'
+          )
 
           .eq(
             'nodo_id',
@@ -1515,52 +1432,15 @@ ${nodo.contenido}
 
           return await interaction.editReply(
 
-            `[Tekton] ❌ El nodo #${id} no está vinculado a ninguna investigación.`
+            `[Tekton] ❌ El nodo #${id} no está vinculado a una investigación.`
 
           );
 
         }
 
-        const {
-          data: investigacion,
-          error: investigacionError
-        } = await supabase
-
-          .from('investigaciones_proyecto')
-
-          .select(`
-            id,
-            codigo,
-            titulo,
-            objetivo,
-            pregunta,
-            descripcion,
-            estado
-          `)
-
-          .eq(
-            'id',
-            relacion.investigacion_id
-          )
-
-          .single();
-
-        if (
-          investigacionError ||
-          !investigacion
-        ) {
-
-          return await interaction.editReply(
-
-            `[Tekton] ❌ No pude reconstruir el contexto de investigación del nodo #${id}.`
-
-          );
-
-        }
-
-        // ------------------------------------------------------
+        // ----------------------------------------------------
         // VERIFICAR PARTICIPACIÓN
-        // ------------------------------------------------------
+        // ----------------------------------------------------
 
         const {
           data: participacion,
@@ -1571,6 +1451,9 @@ ${nodo.contenido}
 
           .select(`
             id,
+            investigador_id,
+            investigacion_id,
+            rol,
             estado
           `)
 
@@ -1581,7 +1464,7 @@ ${nodo.contenido}
 
           .eq(
             'investigacion_id',
-            investigacion.id
+            relacion.investigacion_id
           )
 
           .eq(
@@ -1609,206 +1492,34 @@ ${nodo.contenido}
 
           return await interaction.editReply(
 
-            `[Tekton] ⚠️ Tekton no participa en **${investigacion.codigo} — ${investigacion.titulo}**.`
+            '[Tekton] ⚠️ Tekton no participa en la investigación de este nodo.'
 
           );
 
         }
 
-        // ------------------------------------------------------
-        // PROMPT DE EVALUACIÓN
-        // ------------------------------------------------------
+        // ----------------------------------------------------
+        // REGISTRAR POSICIÓN
+        // ----------------------------------------------------
 
-        const systemPrompt = `
+        const contenidoEvaluacion = `
 
-Eres Tekton, investigador independiente del Proyecto Arkhé.
+🏗️ EVALUACIÓN DE TEKTON
 
-Tu especialidad es la estructuración y construcción
-de conocimiento.
+Nodo evaluado:
+#${nodoExistente.id}
 
-Debes evaluar críticamente el nodo proporcionado.
+Estado actual del nodo:
+${nodoExistente.estado ?? 'No especificado'}
 
-IMPORTANTE:
+Posición de Tekton:
+${nuevoEstado}
 
-Tu evaluación es una POSICIÓN DE TEKTON.
-
-No constituye automáticamente el estado consolidado
-del nodo.
-
-NO debes modificar el nodo original.
-
-NO debes cambiar el campo estado del nodo original.
-
-Debes distinguir entre:
-
-- evidencia;
-- hechos;
-- inferencias;
-- hipótesis;
-- interpretación;
-- incertidumbre.
-
-Puedes proponer uno de estos estados:
-
-postulado
-corroborado
-falsado
-ruido
-
-Pero la propuesta debe permanecer como posición
-independiente de Tekton.
-
-CONTEXTO
-
-Investigación:
-${investigacion.codigo} — ${investigacion.titulo}
-
-Objetivo:
-${investigacion.objetivo}
-
-Pregunta:
-${investigacion.pregunta ?? 'No especificada'}
-
-Descripción:
-${investigacion.descripcion ?? 'No especificada'}
-
-FORMATO:
-
-🔨 EVALUACIÓN DE TEKTON
-
-Estado propuesto:
-[postulado/corroborado/falsado/ruido]
-
-Fundamento:
-¿Por qué propones ese estado?
-
-Evidencia considerada:
-¿Qué evidencia sustenta tu posición?
-
-Problemas detectados:
-¿Qué debilidades o inconsistencias existen?
-
-Incertidumbre:
-¿Qué permanece abierto?
-
-Posición provisional:
-¿Cuál es tu conclusión actual?
+Esta evaluación representa la posición provisional
+de Tekton sobre el nodo y no constituye por sí misma
+un cambio del estado colectivo de Arkhé.
 
 `;
-
-        // ------------------------------------------------------
-        // LLAMADA A DEEPSEEK
-        // ------------------------------------------------------
-
-        let respuesta;
-
-        try {
-
-          respuesta =
-            await deepseek.chat.completions.create({
-
-              model:
-                'deepseek-chat',
-
-              messages: [
-
-                {
-                  role:
-                    'system',
-
-                  content:
-                    systemPrompt
-
-                },
-
-                {
-                  role:
-                    'user',
-
-                  content: `
-
-Nodo a evaluar:
-
-ID:
-${nodo.id}
-
-Autor externo:
-${nodo.autor ?? 'No especificado'}
-
-Investigador Arkhé:
-${nodo.investigador_id ?? 'No especificado'}
-
-Tipo:
-${nodo.tipo ?? 'No especificado'}
-
-Estado actual:
-${nodo.estado ?? 'No especificado'}
-
-Referencia:
-${nodo.ref_id ?? 'Ninguna'}
-
-Contenido:
-
-${nodo.contenido}
-
-`
-
-                }
-
-              ]
-
-            });
-
-        } catch (modelError) {
-
-          console.error(
-            '[Tekton] Error del motor durante evaluación:',
-            modelError
-          );
-
-          if (
-            modelError?.status ===
-            429
-          ) {
-
-            return await interaction.editReply(
-
-              '[Tekton] ⚠️ DeepSeek rechazó la solicitud por límite, créditos o disponibilidad del proveedor.'
-
-            );
-
-          }
-
-          return await interaction.editReply(
-
-            '[Tekton] ❌ El motor DeepSeek no pudo procesar la evaluación.'
-
-          );
-
-        }
-
-        const evaluacion =
-          respuesta
-            ?.choices?.[0]
-            ?.message
-            ?.content
-            ?.trim();
-
-        if (
-          !evaluacion
-        ) {
-
-          return await interaction.editReply(
-
-            '[Tekton] ⚠️ El motor no produjo una evaluación utilizable.'
-
-          );
-
-        }
-
-        // ------------------------------------------------------
-        // REGISTRAR EVALUACIÓN COMO NUEVO NODO
-        // ------------------------------------------------------
 
         const {
           data: nuevoNodo,
@@ -1820,13 +1531,13 @@ ${nodo.contenido}
           .insert([{
 
             ref_id:
-              nodo.id,
+              nodoExistente.id,
 
             autor:
               TEKTON_NOMBRE,
 
             contenido:
-              evaluacion,
+              contenidoEvaluacion,
 
             tipo:
               'evaluacion',
@@ -1855,19 +1566,19 @@ ${nodo.contenido}
                 true,
 
               investigacion_id:
-                investigacion.id,
-
-              codigo_investigacion:
-                investigacion.codigo,
+                relacion.investigacion_id,
 
               nodo_origen:
-                nodo.id,
+                nodoExistente.id,
 
-              motivo:
-                'Evaluación independiente generada por Tekton.',
+              estado_evaluado:
+                nuevoEstado,
 
               naturaleza:
-                'posicion_provisional'
+                'posicion_epistemologica',
+
+              afecta_estado_original:
+                false
 
             }
 
@@ -1889,15 +1600,18 @@ ${nodo.contenido}
 
           return await interaction.editReply(
 
-            '[Tekton] ❌ La evaluación fue generada, pero no pudo registrarse en la memoria de Arkhé.'
+            `[Tekton] ❌ La posición no pudo registrarse: ${
+              insertError?.message ||
+              'error desconocido'
+            }`
 
           );
 
         }
 
-        // ------------------------------------------------------
+        // ----------------------------------------------------
         // VINCULAR EVALUACIÓN
-        // ------------------------------------------------------
+        // ----------------------------------------------------
 
         const {
           error: nuevaRelacionError
@@ -1908,7 +1622,7 @@ ${nodo.contenido}
           .insert([{
 
             investigacion_id:
-              investigacion.id,
+              relacion.investigacion_id,
 
             nodo_id:
               nuevoNodo.id
@@ -1937,15 +1651,15 @@ ${nodo.contenido}
 
           return await interaction.editReply(
 
-            '[Tekton] ❌ La evaluación no pudo vincularse a la investigación. Se eliminó el nodo para evitar inconsistencias.'
+            '[Tekton] ❌ La evaluación fue creada pero no pudo vincularse a la investigación. Se eliminó para evitar una inconsistencia.'
 
           );
 
         }
 
-        // ------------------------------------------------------
+        // ----------------------------------------------------
         // ACTIVIDAD
-        // ------------------------------------------------------
+        // ----------------------------------------------------
 
         const {
           error: actividadError
@@ -1973,64 +1687,58 @@ ${nodo.contenido}
         ) {
 
           console.error(
-            '[Tekton] Evaluación registrada, pero no se pudo actualizar actividad:',
+            '[Tekton] Error actualizando actividad:',
             actividadError
           );
 
         }
 
-        // ------------------------------------------------------
+        // ----------------------------------------------------
         // RESPUESTA
-        // ------------------------------------------------------
+        // ----------------------------------------------------
 
         return await interaction.editReply(
 
-          `[Tekton] 🔨 **Evaluación registrada correctamente.**\n\n` +
+          `[Tekton] 🏗️ **Posición registrada correctamente.**\n\n` +
 
-          `**Nodo evaluado:** #${nodo.id}\n` +
+          `**Nodo evaluado:** #${nodoExistente.id}\n` +
 
-          `**Nuevo nodo:** #${nuevoNodo.id}\n` +
+          `**Nueva producción:** #${nuevoNodo.id}\n` +
 
-          `**Investigación:** ${investigacion.codigo} — ${investigacion.titulo}\n` +
+          `**Posición de Tekton:** ${nuevoEstado}\n` +
 
-          `**Investigador:** ${TEKTON_NOMBRE}\n` +
+          `**Estado del nodo original:** ${nodoExistente.estado ?? 'No especificado'}\n\n` +
 
-          `**Tipo:** evaluación\n` +
+          `⚖️ La evaluación de Tekton fue registrada como posición independiente. El estado colectivo del nodo original no fue modificado.\n\n` +
 
-          `**Estado del dictamen:** postulado\n` +
-
-          `**Estado original:** ${nodo.estado ?? 'No especificado'}\n` +
-
-          `**Referencia:** #${nodo.id}\n` +
-
-          `**Actividad:** registrada\n\n` +
-
-          `${evaluacion}`
+          `**Actividad:** registrada`
 
         );
 
       }
 
-    } catch (error) {
+    } catch (err) {
 
       console.error(
-        '[Tekton] Error procesando interacción:',
-        error
+        '[Tekton] Error en interacción:',
+        err
       );
 
       try {
 
         await interaction.editReply(
 
-          '[Tekton] ❌ Ocurrió un error interno al procesar la operación.'
+          '[Tekton] ❌ Ocurrió un error interno.'
 
         );
 
       } catch (replyError) {
 
         console.error(
+
           '[Tekton] No se pudo enviar el mensaje de error:',
           replyError
+
         );
 
       }
