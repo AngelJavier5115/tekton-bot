@@ -353,7 +353,9 @@ Referencia: ${nodo.ref_id ?? 'Ninguna'}
 Contenido:
 ${nodo.contenido}`,
           max_output_tokens: 4096,
-          reasoning_effort: 'medium'
+          reasoning: {
+            effort: 'medium'
+          }
         });
       } catch (modelError) {
         console.error('[Tekton] Error del motor:', modelError);
