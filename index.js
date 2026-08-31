@@ -10,10 +10,6 @@ import { createClient } from '@supabase/supabase-js';
 import OpenAI from 'openai';
 import http from 'http';
 
-// ============================================================
-// TEKTON — NODO DE CONSTRUCCIÓN Y ESTRUCTURACIÓN DE ARKHÉ
-// ============================================================
-
 const PORT = process.env.PORT || 3000;
 
 http.createServer((req, res) => {
@@ -23,9 +19,18 @@ http.createServer((req, res) => {
 
 const supabase = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_KEY);
 
-const openai = process.env.DEEPSEEK_API_KEY
-  ? new OpenAI({ apiKey: process.env.DEEPSEEK_API_KEY, baseURL: 'https://api.deepseek.com' })
+// ============================================================
+// MOTOR DE TEKTON — GROQ
+// ============================================================
+
+const openai = process.env.GROQ_API_KEY
+  ? new OpenAI({
+      apiKey: process.env.GROQ_API_KEY,
+      baseURL: 'https://api.groq.com/openai/v1'
+    })
   : null;
+
+const TEKTON_MODEL = process.env.GROQ_MODEL || 'openai/gpt-oss-20b';
 
 const TEKTON_ID = '656726d1-8209-4240-8169-a7434074609d';
 const TEKTON_NOMBRE = 'Tekton';
@@ -47,16 +52,10 @@ function splitDiscordMessage(text, maxLength = DISCORD_MAX_LENGTH) {
 
   while (restante.length > maxLength) {
     let corte = restante.lastIndexOf('\n', maxLength);
-
-    if (corte < Math.floor(maxLength * 0.5)) {
-      corte = restante.lastIndexOf(' ', maxLength);
-    }
-
+    if (corte < Math.floor(maxLength * 0.5)) corte = restante.lastIndexOf(' ', maxLength);
     if (corte <= 0) corte = maxLength;
-
     partes.push(restante.slice(0, corte));
     restante = restante.slice(corte);
-
     if (restante.startsWith('\n')) restante = restante.slice(1);
     if (restante.startsWith(' ')) restante = restante.slice(1);
   }
@@ -67,17 +66,9 @@ function splitDiscordMessage(text, maxLength = DISCORD_MAX_LENGTH) {
 
 async function sendLongReply(interaction, text) {
   const partes = splitDiscordMessage(text);
-
   await interaction.editReply(partes[0]);
-
-  for (let i = 1; i < partes.length; i++) {
-    await interaction.followUp(partes[i]);
-  }
+  for (let i = 1; i < partes.length; i++) await interaction.followUp(partes[i]);
 }
-
-// ============================================================
-// COMANDOS
-// ============================================================
 
 const commands = [
   new SlashCommandBuilder()
@@ -114,6 +105,7 @@ process.on('uncaughtException', error => console.error('[Tekton] Uncaught Except
 client.once('ready', async () => {
   console.log(`[Tekton] Bot en línea como: ${client.user.tag}`);
   console.log(`[Tekton] Identidad Arkhé: ${TEKTON_NOMBRE} (${TEKTON_ID})`);
+  console.log(`[Tekton] Motor: Groq / ${TEKTON_MODEL}`);
 
   try {
     const rest = new REST({ version: '10' }).setToken(process.env.DISCORD_TOKEN);
@@ -133,10 +125,6 @@ client.on('interactionCreate', async interaction => {
   try {
     await interaction.deferReply();
     const id = interaction.options.getInteger('id');
-
-    // ========================================================
-    // TEKTON-CONSULTAR
-    // ========================================================
 
     if (interaction.commandName === 'tekton-consultar') {
       const { data: nodo, error } = await supabase
@@ -158,10 +146,6 @@ client.on('interactionCreate', async interaction => {
 
       return await sendLongReply(interaction, respuesta);
     }
-
-    // ========================================================
-    // TEKTON-NODO
-    // ========================================================
 
     if (interaction.commandName === 'tekton-nodo') {
       const contenido = interaction.options.getString('contenido');
@@ -199,19 +183,13 @@ client.on('interactionCreate', async interaction => {
           estado: 'postulado',
           investigador_id: TEKTON_ID,
           metadata: {
-            canal: 'discord',
-            investigador: TEKTON_NOMBRE,
-            investigador_id: TEKTON_ID,
-            usuario_origen: interaction.user.tag,
-            identidad_arkhe: true,
-            investigacion_id: investigacion.id,
-            codigo_investigacion: investigacion.codigo,
-            motivo: 'Producción registrada por Tekton.',
-            naturaleza: 'posicion_investigadora'
+            canal: 'discord', investigador: TEKTON_NOMBRE, investigador_id: TEKTON_ID,
+            usuario_origen: interaction.user.tag, identidad_arkhe: true,
+            investigacion_id: investigacion.id, codigo_investigacion: investigacion.codigo,
+            motivo: 'Producción registrada por Tekton.', naturaleza: 'posicion_investigadora'
           }
         }])
-        .select()
-        .single();
+        .select().single();
 
       if (insertError || !nuevoNodo) {
         console.error('[Tekton] Error creando nodo:', insertError);
@@ -241,41 +219,31 @@ client.on('interactionCreate', async interaction => {
         `**Nodo:** #${nuevoNodo.id}\n` +
         `**Investigación:** ${investigacion.codigo} — ${investigacion.titulo}\n` +
         `**Investigador:** ${TEKTON_NOMBRE}\n` +
-        `**Tipo:** producción\n` +
-        `**Estado:** postulado\n` +
-        `**Actividad:** registrada`
+        `**Tipo:** producción\n**Estado:** postulado\n**Actividad:** registrada`
       );
     }
 
-    // ========================================================
-    // TEKTON-ANALIZAR
-    // ========================================================
-
     if (interaction.commandName === 'tekton-analizar') {
-      if (!openai) return await interaction.editReply('[Tekton] ⚠️ El motor de Tekton no está configurado.');
+      if (!openai) return await interaction.editReply('[Tekton] ⚠️ El motor de Tekton no está configurado. Falta GROQ_API_KEY.');
 
       const { data: nodo, error: nodoError } = await supabase
         .from('investigaciones')
         .select('id, contenido, estado, autor, tipo, investigador_id, ref_id, metadata')
-        .eq('id', id)
-        .single();
+        .eq('id', id).single();
 
       if (nodoError || !nodo) return await interaction.editReply(`[Tekton] ❌ Nodo #${id} no encontrado.`);
 
       const { data: relacion, error: relacionError } = await supabase
         .from('investigacion_nodos')
         .select('investigacion_id, nodo_id')
-        .eq('nodo_id', id)
-        .limit(1)
-        .maybeSingle();
+        .eq('nodo_id', id).limit(1).maybeSingle();
 
       if (relacionError || !relacion) return await interaction.editReply(`[Tekton] ❌ El nodo #${id} no está vinculado a ninguna investigación.`);
 
       const { data: investigacion, error: investigacionError } = await supabase
         .from('investigaciones_proyecto')
         .select('id, codigo, titulo, objetivo, pregunta, descripcion, estado')
-        .eq('id', relacion.investigacion_id)
-        .single();
+        .eq('id', relacion.investigacion_id).single();
 
       if (investigacionError || !investigacion) return await interaction.editReply(`[Tekton] ❌ No pude reconstruir el contexto de investigación del nodo #${id}.`);
 
@@ -284,8 +252,7 @@ client.on('interactionCreate', async interaction => {
         .select('id, investigador_id, investigacion_id, rol, estado')
         .eq('investigador_id', TEKTON_ID)
         .eq('investigacion_id', investigacion.id)
-        .eq('estado', 'activo')
-        .maybeSingle();
+        .eq('estado', 'activo').maybeSingle();
 
       if (participacionError || !participacion) return await interaction.editReply('[Tekton] ⚠️ Tekton no participa actualmente en esta investigación.');
 
@@ -345,27 +312,52 @@ Una producción de Tekton NO constituye automáticamente una verdad de Arkhé.
 FORMATO
 Devuelve exactamente una estructura clara con:
 🏗️ ANÁLISIS DE TEKTON
+
 Interpretación: ¿Qué plantea el nodo?
+
 Análisis estructural: ¿Cómo está construido el razonamiento o sistema?
+
 Fortalezas: ¿Qué elementos están bien fundamentados o estructurados?
+
 Problemas: ¿Qué contradicciones, debilidades o riesgos existen?
+
 Viabilidad: ¿Qué tan viable resulta la propuesta con la información disponible?
+
 Dependencias: ¿Qué elementos adicionales necesita?
+
 Incertidumbre: ¿Qué permanece sin determinar?
+
 Información faltante: ¿Qué información sería necesaria?
+
 Posición provisional: ¿Cuál es la posición actual de Tekton y por qué?
 `;
 
       let respuesta;
       try {
         respuesta = await openai.responses.create({
-          model: process.env.DEEPSEEK_MODEL || 'deepseek-chat',
+          model: TEKTON_MODEL,
           instructions: systemPrompt,
-          input: `CONTEXTO DE ARKHÉ\n\nInvestigación:\n${investigacion.codigo} — ${investigacion.titulo}\n\nNodo:\nID: ${nodo.id}\nAutor externo: ${nodo.autor ?? 'No especificado'}\nInvestigador Arkhé: ${nodo.investigador_id ?? 'No especificado'}\nTipo: ${nodo.tipo ?? 'No especificado'}\nEstado actual: ${nodo.estado ?? 'No especificado'}\nReferencia: ${nodo.ref_id ?? 'Ninguna'}\n\nContenido:\n${nodo.contenido}`
+          input: `CONTEXTO DE ARKHÉ
+
+Investigación:
+${investigacion.codigo} — ${investigacion.titulo}
+
+Nodo:
+ID: ${nodo.id}
+Autor externo: ${nodo.autor ?? 'No especificado'}
+Investigador Arkhé: ${nodo.investigador_id ?? 'No especificado'}
+Tipo: ${nodo.tipo ?? 'No especificado'}
+Estado actual: ${nodo.estado ?? 'No especificado'}
+Referencia: ${nodo.ref_id ?? 'Ninguna'}
+
+Contenido:
+${nodo.contenido}`,
+          max_output_tokens: 4096,
+          reasoning_effort: 'medium'
         });
       } catch (modelError) {
         console.error('[Tekton] Error del motor:', modelError);
-        if (modelError?.status === 429) return await interaction.editReply('[Tekton] ⚠️ El motor rechazó la solicitud por límite o falta de créditos. La arquitectura de Arkhé respondió correctamente, pero el proveedor del motor debe revisarse.');
+        if (modelError?.status === 429) return await interaction.editReply('[Tekton] ⚠️ El motor de Tekton alcanzó un límite temporal de Groq. La arquitectura de Arkhé respondió correctamente; inténtalo nuevamente en unos momentos.');
         return await interaction.editReply('[Tekton] ❌ El motor de Tekton no pudo procesar el análisis.');
       }
 
@@ -375,27 +367,16 @@ Posición provisional: ¿Cuál es la posición actual de Tekton y por qué?
       const { data: nuevoNodo, error: insertError } = await supabase
         .from('investigaciones')
         .insert([{
-          ref_id: nodo.id,
-          autor: TEKTON_NOMBRE,
-          contenido: analisis,
-          tipo: 'analisis',
-          estado: 'postulado',
-          investigador_id: TEKTON_ID,
+          ref_id: nodo.id, autor: TEKTON_NOMBRE, contenido: analisis,
+          tipo: 'analisis', estado: 'postulado', investigador_id: TEKTON_ID,
           metadata: {
-            canal: 'discord',
-            investigador: TEKTON_NOMBRE,
-            investigador_id: TEKTON_ID,
-            usuario_origen: interaction.user.tag,
-            identidad_arkhe: true,
-            investigacion_id: investigacion.id,
-            codigo_investigacion: investigacion.codigo,
-            nodo_origen: nodo.id,
-            motivo: 'Análisis estructural generado por Tekton.',
-            naturaleza: 'posicion_provisional'
+            canal: 'discord', investigador: TEKTON_NOMBRE, investigador_id: TEKTON_ID,
+            usuario_origen: interaction.user.tag, identidad_arkhe: true,
+            investigacion_id: investigacion.id, codigo_investigacion: investigacion.codigo,
+            nodo_origen: nodo.id, motivo: 'Análisis estructural generado por Tekton.',
+            naturaleza: 'posicion_provisional', modelo: TEKTON_MODEL, proveedor: 'Groq'
           }
-        }])
-        .select()
-        .single();
+        }]).select().single();
 
       if (insertError || !nuevoNodo) {
         console.error('[Tekton] Error creando nodo de análisis:', insertError);
@@ -435,27 +416,20 @@ Posición provisional: ¿Cuál es la posición actual de Tekton y por qué?
       return await sendLongReply(interaction, respuestaFinal);
     }
 
-    // ========================================================
-    // TEKTON-EVALUAR
-    // ========================================================
-
     if (interaction.commandName === 'tekton-evaluar') {
       const nuevoEstado = interaction.options.getString('estado');
 
       const { data: nodoExistente, error: fetchError } = await supabase
         .from('investigaciones')
         .select('id, contenido, estado, autor, tipo, investigador_id, ref_id')
-        .eq('id', id)
-        .single();
+        .eq('id', id).single();
 
       if (fetchError || !nodoExistente) return await interaction.editReply(`[Tekton] ❌ Nodo #${id} no encontrado.`);
 
       const { data: relacion, error: relacionError } = await supabase
         .from('investigacion_nodos')
         .select('investigacion_id')
-        .eq('nodo_id', id)
-        .limit(1)
-        .maybeSingle();
+        .eq('nodo_id', id).limit(1).maybeSingle();
 
       if (relacionError || !relacion) return await interaction.editReply(`[Tekton] ❌ El nodo #${id} no está vinculado a una investigación.`);
 
@@ -464,8 +438,7 @@ Posición provisional: ¿Cuál es la posición actual de Tekton y por qué?
         .select('id, investigador_id, investigacion_id, rol, estado')
         .eq('investigador_id', TEKTON_ID)
         .eq('investigacion_id', relacion.investigacion_id)
-        .eq('estado', 'activo')
-        .maybeSingle();
+        .eq('estado', 'activo').maybeSingle();
 
       if (participacionError) return await interaction.editReply('[Tekton] ❌ No se pudo verificar la participación de Tekton.');
       if (!participacion) return await interaction.editReply('[Tekton] ⚠️ Tekton no participa en la investigación de este nodo.');
@@ -488,27 +461,16 @@ Esta evaluación representa la posición provisional de Tekton sobre el nodo y n
       const { data: nuevoNodo, error: insertError } = await supabase
         .from('investigaciones')
         .insert([{
-          ref_id: nodoExistente.id,
-          autor: TEKTON_NOMBRE,
-          contenido: contenidoEvaluacion,
-          tipo: 'evaluacion',
-          estado: 'postulado',
-          investigador_id: TEKTON_ID,
+          ref_id: nodoExistente.id, autor: TEKTON_NOMBRE, contenido: contenidoEvaluacion,
+          tipo: 'evaluacion', estado: 'postulado', investigador_id: TEKTON_ID,
           metadata: {
-            canal: 'discord',
-            investigador: TEKTON_NOMBRE,
-            investigador_id: TEKTON_ID,
-            usuario_origen: interaction.user.tag,
-            identidad_arkhe: true,
-            investigacion_id: relacion.investigacion_id,
-            nodo_origen: nodoExistente.id,
-            estado_evaluado: nuevoEstado,
-            naturaleza: 'posicion_epistemologica',
+            canal: 'discord', investigador: TEKTON_NOMBRE, investigador_id: TEKTON_ID,
+            usuario_origen: interaction.user.tag, identidad_arkhe: true,
+            investigacion_id: relacion.investigacion_id, nodo_origen: nodoExistente.id,
+            estado_evaluado: nuevoEstado, naturaleza: 'posicion_epistemologica',
             afecta_estado_original: false
           }
-        }])
-        .select()
-        .single();
+        }]).select().single();
 
       if (insertError || !nuevoNodo) {
         console.error('[Tekton] Error registrando evaluación:', insertError);
