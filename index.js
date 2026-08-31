@@ -85,18 +85,7 @@ const commands = [
   new SlashCommandBuilder()
     .setName('tekton-analizar')
     .setDescription('Tekton: analiza estructuralmente un nodo')
-    .addIntegerOption(option => option.setName('id').setDescription('ID del nodo que Tekton analizará').setRequired(true)),
-
-  new SlashCommandBuilder()
-    .setName('tekton-evaluar')
-    .setDescription('Tekton: registra su posición epistemológica sobre un nodo')
-    .addIntegerOption(option => option.setName('id').setDescription('ID del nodo a evaluar').setRequired(true))
-    .addStringOption(option => option.setName('estado').setDescription('Posición epistemológica de Tekton').setRequired(true).addChoices(
-      { name: 'Postulado', value: 'postulado' },
-      { name: 'Corroborado', value: 'corroborado' },
-      { name: 'Falsado', value: 'falsado' },
-      { name: 'Ruido', value: 'ruido' }
-    ))
+    .addIntegerOption(option => option.setName('id').setDescription('ID del nodo que Tekton analizará').setRequired(true))
 ].map(cmd => cmd.toJSON());
 
 process.on('unhandledRejection', error => console.error('[Tekton] Unhandled Rejection:', error));
@@ -119,7 +108,7 @@ client.once('ready', async () => {
 client.on('interactionCreate', async interaction => {
   if (!interaction.isChatInputCommand()) return;
 
-  const comandosTekton = ['tekton-nodo', 'tekton-consultar', 'tekton-analizar', 'tekton-evaluar'];
+  const comandosTekton = ['tekton-nodo', 'tekton-consultar', 'tekton-analizar'];
   if (!comandosTekton.includes(interaction.commandName)) return;
 
   try {
@@ -416,96 +405,6 @@ ${nodo.contenido}`,
         `${analisis}`;
 
       return await sendLongReply(interaction, respuestaFinal);
-    }
-
-    if (interaction.commandName === 'tekton-evaluar') {
-      const nuevoEstado = interaction.options.getString('estado');
-
-      const { data: nodoExistente, error: fetchError } = await supabase
-        .from('investigaciones')
-        .select('id, contenido, estado, autor, tipo, investigador_id, ref_id')
-        .eq('id', id).single();
-
-      if (fetchError || !nodoExistente) return await interaction.editReply(`[Tekton] ❌ Nodo #${id} no encontrado.`);
-
-      const { data: relacion, error: relacionError } = await supabase
-        .from('investigacion_nodos')
-        .select('investigacion_id')
-        .eq('nodo_id', id).limit(1).maybeSingle();
-
-      if (relacionError || !relacion) return await interaction.editReply(`[Tekton] ❌ El nodo #${id} no está vinculado a una investigación.`);
-
-      const { data: participacion, error: participacionError } = await supabase
-        .from('participaciones')
-        .select('id, investigador_id, investigacion_id, rol, estado')
-        .eq('investigador_id', TEKTON_ID)
-        .eq('investigacion_id', relacion.investigacion_id)
-        .eq('estado', 'activo').maybeSingle();
-
-      if (participacionError) return await interaction.editReply('[Tekton] ❌ No se pudo verificar la participación de Tekton.');
-      if (!participacion) return await interaction.editReply('[Tekton] ⚠️ Tekton no participa en la investigación de este nodo.');
-
-      const contenidoEvaluacion = `
-🏗️ EVALUACIÓN DE TEKTON
-
-Nodo evaluado:
-#${nodoExistente.id}
-
-Estado actual del nodo:
-${nodoExistente.estado ?? 'No especificado'}
-
-Posición de Tekton:
-${nuevoEstado}
-
-Esta evaluación representa la posición provisional de Tekton sobre el nodo y no constituye por sí misma un cambio del estado colectivo de Arkhé.
-`;
-
-      const { data: nuevoNodo, error: insertError } = await supabase
-        .from('investigaciones')
-        .insert([{
-          ref_id: nodoExistente.id, autor: TEKTON_NOMBRE, contenido: contenidoEvaluacion,
-          tipo: 'evaluacion', estado: 'postulado', investigador_id: TEKTON_ID,
-          metadata: {
-            canal: 'discord', investigador: TEKTON_NOMBRE, investigador_id: TEKTON_ID,
-            usuario_origen: interaction.user.tag, identidad_arkhe: true,
-            investigacion_id: relacion.investigacion_id, nodo_origen: nodoExistente.id,
-            estado_evaluado: nuevoEstado, naturaleza: 'posicion_epistemologica',
-            afecta_estado_original: false
-          }
-        }]).select().single();
-
-      if (insertError || !nuevoNodo) {
-        console.error('[Tekton] Error registrando evaluación:', insertError);
-        return await interaction.editReply(`[Tekton] ❌ La posición no pudo registrarse: ${insertError?.message || 'error desconocido'}`);
-      }
-
-      const { error: nuevaRelacionError } = await supabase
-        .from('investigacion_nodos')
-        .insert([{ investigacion_id: relacion.investigacion_id, nodo_id: nuevoNodo.id }]);
-
-      if (nuevaRelacionError) {
-        console.error('[Tekton] Error vinculando evaluación:', nuevaRelacionError);
-        await supabase.from('investigaciones').delete().eq('id', nuevoNodo.id);
-        return await interaction.editReply('[Tekton] ❌ La evaluación fue creada pero no pudo vincularse a la investigación. Se eliminó para evitar una inconsistencia.');
-      }
-
-      const timestamp = new Date().toISOString();
-      const { error: actividadError } = await supabase
-        .from('participaciones')
-        .update({ ultima_actividad: timestamp, updated_at: timestamp })
-        .eq('id', participacion.id);
-
-      if (actividadError) console.error('[Tekton] Error actualizando actividad:', actividadError);
-
-      return await interaction.editReply(
-        `[Tekton] 🏗️ **Posición registrada correctamente.**\n\n` +
-        `**Nodo evaluado:** #${nodoExistente.id}\n` +
-        `**Nueva producción:** #${nuevoNodo.id}\n` +
-        `**Posición de Tekton:** ${nuevoEstado}\n` +
-        `**Estado del nodo original:** ${nodoExistente.estado ?? 'No especificado'}\n\n` +
-        `⚖️ La evaluación de Tekton fue registrada como posición independiente. El estado colectivo del nodo original no fue modificado.\n\n` +
-        `**Actividad:** registrada`
-      );
     }
   } catch (err) {
     console.error('[Tekton] Error en interacción:', err);
