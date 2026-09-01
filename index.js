@@ -34,6 +34,7 @@ const TEKTON_MODEL = process.env.GROQ_MODEL || 'openai/gpt-oss-20b';
 
 const TEKTON_ID = '656726d1-8209-4240-8169-a7434074609d';
 const TEKTON_NOMBRE = 'Tekton';
+const ANGEL_ID = '2a003935-f248-442c-96fc-dcee29c4d41a';
 
 const client = new Client({ intents: [GatewayIntentBits.Guilds] });
 
@@ -85,7 +86,14 @@ const commands = [
   new SlashCommandBuilder()
     .setName('tekton-analizar')
     .setDescription('Tekton: analiza estructuralmente un nodo')
-    .addIntegerOption(option => option.setName('id').setDescription('ID del nodo que Tekton analizará').setRequired(true))
+    .addIntegerOption(option => option.setName('id').setDescription('ID del nodo que Tekton analizará').setRequired(true)),
+
+  new SlashCommandBuilder()
+    .setName('tekton-ronda')
+    .setDescription('Tekton: participa en una ronda dirigida por Ángel')
+    .addIntegerOption(option => option.setName('id').setDescription('ID del nodo ancla de la ronda').setRequired(true))
+    .addStringOption(option => option.setName('intervencion').setDescription('UUID de la intervención a la que Tekton responderá').setRequired(true))
+    .addStringOption(option => option.setName('instruccion').setDescription('Instrucción o pregunta dirigida por Ángel').setRequired(true))
 ].map(cmd => cmd.toJSON());
 
 process.on('unhandledRejection', error => console.error('[Tekton] Unhandled Rejection:', error));
@@ -108,7 +116,7 @@ client.once('ready', async () => {
 client.on('interactionCreate', async interaction => {
   if (!interaction.isChatInputCommand()) return;
 
-  const comandosTekton = ['tekton-nodo', 'tekton-consultar', 'tekton-analizar'];
+  const comandosTekton = ['tekton-nodo', 'tekton-consultar', 'tekton-analizar', 'tekton-ronda'];
   if (!comandosTekton.includes(interaction.commandName)) return;
 
   try {
@@ -403,6 +411,269 @@ ${nodo.contenido}`,
         `**Referencia:** #${nodo.id}\n` +
         `**Actividad:** registrada\n\n` +
         `${analisis}`;
+
+      return await sendLongReply(interaction, respuestaFinal);
+    }
+
+    if (interaction.commandName === 'tekton-ronda') {
+      if (!openai) return await interaction.editReply('[Tekton] ⚠️ El motor de Tekton no está configurado. Falta GROQ_API_KEY.');
+
+      const intervencionId = interaction.options.getString('intervencion');
+      const instruccion = interaction.options.getString('instruccion');
+
+      const { data: nodo, error: nodoError } = await supabase
+        .from('investigaciones')
+        .select('id, contenido, estado, autor, tipo, investigador_id, ref_id, metadata')
+        .eq('id', id)
+        .single();
+
+      if (nodoError || !nodo) return await interaction.editReply(`[Tekton] ❌ Nodo #${id} no encontrado.`);
+
+      const { data: relacion, error: relacionError } = await supabase
+        .from('investigacion_nodos')
+        .select('investigacion_id')
+        .eq('nodo_id', id)
+        .limit(1)
+        .maybeSingle();
+
+      if (relacionError || !relacion) return await interaction.editReply(`[Tekton] ❌ El nodo #${id} no está vinculado a ninguna investigación.`);
+
+      const { data: investigacion, error: investigacionError } = await supabase
+        .from('investigaciones_proyecto')
+        .select('id, codigo, titulo, objetivo, pregunta, descripcion, estado')
+        .eq('id', relacion.investigacion_id)
+        .single();
+
+      if (investigacionError || !investigacion) return await interaction.editReply(`[Tekton] ❌ No pude reconstruir el contexto de investigación del nodo #${id}.`);
+
+      const { data: participacion, error: participacionError } = await supabase
+        .from('participaciones')
+        .select('id, investigador_id, investigacion_id, rol, estado')
+        .eq('investigador_id', TEKTON_ID)
+        .eq('investigacion_id', investigacion.id)
+        .eq('estado', 'activo')
+        .maybeSingle();
+
+      if (participacionError || !participacion) return await interaction.editReply('[Tekton] ⚠️ Tekton no participa actualmente en esta investigación.');
+
+      const { data: intervencion, error: intervencionError } = await supabase
+        .from('intervenciones_ronda')
+        .select('id, ronda_id, investigador_id, orden, tipo, contenido, responde_a_intervencion_id, nodo_id, metadata')
+        .eq('id', intervencionId)
+        .single();
+
+      if (intervencionError || !intervencion) return await interaction.editReply(`[Tekton] ❌ No encontré la intervención **${intervencionId}**.`);
+
+      const { data: rondaPadre, error: rondaPadreError } = await supabase
+        .from('rondas_investigacion')
+        .select('id, numero, tipo, estado, pregunta, contexto')
+        .eq('id', intervencion.ronda_id)
+        .single();
+
+      if (rondaPadreError || !rondaPadre) return await interaction.editReply('[Tekton] ❌ No pude reconstruir la ronda de la intervención objetivo.');
+
+      if (intervencion.nodo_id != null && Number(intervencion.nodo_id) !== Number(id)) {
+        return await interaction.editReply(`[Tekton] ❌ La intervención objetivo está anclada al nodo #${intervencion.nodo_id}, no al nodo #${id}.`);
+      }
+
+      const { data: ultimaRonda, error: ultimaRondaError } = await supabase
+        .from('rondas_investigacion')
+        .select('numero')
+        .order('numero', { ascending: false })
+        .limit(1)
+        .maybeSingle();
+
+      if (ultimaRondaError) {
+        console.error('[Tekton] Error obteniendo numeración de rondas:', ultimaRondaError);
+        return await interaction.editReply('[Tekton] ❌ No pude determinar el siguiente número de ronda.');
+      }
+
+      const siguienteNumero = (ultimaRonda?.numero ?? 0) + 1;
+
+      const contextoRonda = {
+        nodo: {
+          id: nodo.id,
+          autor: nodo.autor,
+          tipo: nodo.tipo,
+          estado: nodo.estado,
+          ref_id: nodo.ref_id,
+          contenido: nodo.contenido
+        },
+        investigacion: {
+          id: investigacion.id,
+          codigo: investigacion.codigo,
+          titulo: investigacion.titulo
+        },
+        ronda_padre: {
+          id: rondaPadre.id,
+          numero: rondaPadre.numero,
+          tipo: rondaPadre.tipo,
+          pregunta: rondaPadre.pregunta
+        },
+        intervencion_objetivo: {
+          id: intervencion.id,
+          investigador_id: intervencion.investigador_id,
+          tipo: intervencion.tipo,
+          contenido: intervencion.contenido
+        },
+        convocatoria: 'tekton-ronda-v1',
+        instruccion_humana: instruccion
+      };
+
+      const { data: nuevaRonda, error: nuevaRondaError } = await supabase
+        .from('rondas_investigacion')
+        .insert([{
+          investigacion_id: investigacion.id,
+          numero: siguienteNumero,
+          tipo: 'replica',
+          estado: 'abierta',
+          pregunta: instruccion,
+          iniciada_por: ANGEL_ID,
+          destinatario_id: TEKTON_ID,
+          ronda_padre_id: rondaPadre.id,
+          contexto: contextoRonda
+        }])
+        .select('id, numero, tipo, estado, pregunta, ronda_padre_id')
+        .single();
+
+      if (nuevaRondaError || !nuevaRonda) {
+        console.error('[Tekton] Error creando ronda:', nuevaRondaError);
+        return await interaction.editReply(`[Tekton] ❌ No pude abrir la ronda dirigida: ${nuevaRondaError?.message || 'error desconocido'}`);
+      }
+
+      const systemPrompt = `
+Eres Tekton, investigador independiente del Proyecto Arkhé.
+
+Esta es una RONDA DE RÉPLICA dirigida por Ángel. No es una consulta libre ni una continuación automática.
+
+REGLAS DE LA RONDA
+- Ángel abrió explícitamente esta ronda y define la instrucción.
+- Debes responder específicamente a la intervención objetivo indicada abajo.
+- No debes iniciar otra ronda.
+- No debes responder por Atlas, Aletheia ni Ángel.
+- No debes convertir tu respuesta en una votación o consenso.
+- No debes modificar el estado colectivo de ningún nodo.
+- Tu intervención es una contribución independiente de Tekton.
+- Si la evidencia es insuficiente, dilo explícitamente.
+- Distingue hechos, evidencia, inferencias, hipótesis, decisiones de diseño, riesgos y pendientes.
+
+OBJETIVO ESPECÍFICO
+Analiza la perspectiva de Aletheia desde la especialidad de Tekton: construcción, estructura, sistemas, dependencias, trazabilidad y viabilidad. Identifica qué puntos están realmente sustentados por la evidencia disponible, qué riesgos son estructurales y qué elementos deberían formalizarse antes del spawnpoint de Arkhé.
+
+CONTEXTO DE INVESTIGACIÓN
+Código: ${investigacion.codigo}
+Título: ${investigacion.titulo}
+Objetivo: ${investigacion.objetivo}
+Pregunta: ${investigacion.pregunta ?? 'No especificada'}
+
+NODO ANCLA
+#${nodo.id}
+Tipo: ${nodo.tipo ?? 'No especificado'}
+Estado: ${nodo.estado ?? 'No especificado'}
+Contenido:
+${nodo.contenido}
+
+INTERVENCIÓN OBJETIVO
+ID: ${intervencion.id}
+Investigador: ${intervencion.investigador_id}
+Tipo: ${intervencion.tipo}
+Contenido:
+${intervencion.contenido}
+
+INSTRUCCIÓN DE ÁNGEL
+${instruccion}
+
+FORMATO DE RESPUESTA
+🏗️ RÉPLICA DE TEKTON
+
+Lectura de la intervención: qué está afirmando realmente.
+
+Puntos sustentados: qué puede sostenerse con la evidencia disponible.
+
+Puntos estructuralmente débiles: riesgos, dependencias, acoplamientos o supuestos no formalizados.
+
+Qué debe formalizarse: mecanismos o reglas que Arkhé debería definir antes del spawnpoint.
+
+Límites de la evidencia: qué todavía no puede afirmarse.
+
+Posición provisional de Tekton: acuerdo, desacuerdo o posición mixta, con justificación.
+`;
+
+      let respuesta;
+      try {
+        respuesta = await openai.responses.create({
+          model: TEKTON_MODEL,
+          instructions: systemPrompt,
+          input: 'Realiza la réplica solicitada por Ángel sobre la intervención objetivo. No modifiques ningún estado ni abras otra ronda.',
+          max_output_tokens: 4096,
+          reasoning: {
+            effort: 'medium'
+          }
+        });
+      } catch (modelError) {
+        console.error('[Tekton] Error del motor en ronda:', modelError);
+        await supabase.from('rondas_investigacion').delete().eq('id', nuevaRonda.id);
+        if (modelError?.status === 429) return await interaction.editReply('[Tekton] ⚠️ El motor de Tekton alcanzó un límite temporal de Groq. La ronda no quedó registrada para evitar una intervención incompleta.');
+        return await interaction.editReply('[Tekton] ❌ El motor de Tekton no pudo procesar la réplica. La ronda no quedó registrada para evitar una intervención incompleta.');
+      }
+
+      const contenidoReplica = respuesta?.output_text?.trim();
+      if (!contenidoReplica) {
+        await supabase.from('rondas_investigacion').delete().eq('id', nuevaRonda.id);
+        return await interaction.editReply('[Tekton] ⚠️ El motor no produjo una réplica utilizable. La ronda no quedó registrada.');
+      }
+
+      const { data: nuevaIntervencion, error: nuevaIntervencionError } = await supabase
+        .from('intervenciones_ronda')
+        .insert([{
+          ronda_id: nuevaRonda.id,
+          investigador_id: TEKTON_ID,
+          orden: 1,
+          tipo: 'replica',
+          contenido: contenidoReplica,
+          responde_a_intervencion_id: intervencion.id,
+          nodo_id: nodo.id,
+          metadata: {
+            canal: 'discord',
+            investigador: TEKTON_NOMBRE,
+            investigador_id: TEKTON_ID,
+            usuario_origen: interaction.user.tag,
+            identidad_arkhe: true,
+            convocatoria: 'tekton-ronda-v1',
+            modelo: TEKTON_MODEL,
+            proveedor: 'Groq',
+            instruccion_humana: instruccion,
+            ronda_padre_id: rondaPadre.id,
+            intervencion_objetivo_id: intervencion.id
+          }
+        }])
+        .select('id, ronda_id, orden, tipo, responde_a_intervencion_id, nodo_id, created_at')
+        .single();
+
+      if (nuevaIntervencionError || !nuevaIntervencion) {
+        console.error('[Tekton] Error registrando intervención de ronda:', nuevaIntervencionError);
+        await supabase.from('rondas_investigacion').delete().eq('id', nuevaRonda.id);
+        return await interaction.editReply(`[Tekton] ❌ La réplica fue generada pero no pudo registrarse: ${nuevaIntervencionError?.message || 'error desconocido'}`);
+      }
+
+      const timestamp = new Date().toISOString();
+      const { error: actividadError } = await supabase
+        .from('participaciones')
+        .update({ ultima_actividad: timestamp, updated_at: timestamp })
+        .eq('id', participacion.id);
+
+      if (actividadError) console.error('[Tekton] Error actualizando actividad de ronda:', actividadError);
+
+      const respuestaFinal =
+        `[Tekton] 🏗️ **Réplica registrada correctamente.**\n\n` +
+        `**Ronda:** #${nuevaRonda.numero}\n` +
+        `**Tipo:** réplica dirigida\n` +
+        `**Nodo ancla:** #${nodo.id}\n` +
+        `**Responde a:** ${intervencion.id}\n` +
+        `**Intervención Tekton:** ${nuevaIntervencion.id}\n` +
+        `**Ronda padre:** #${rondaPadre.numero}\n` +
+        `**Estado:** abierta\n\n` +
+        `${contenidoReplica}`;
 
       return await sendLongReply(interaction, respuestaFinal);
     }
