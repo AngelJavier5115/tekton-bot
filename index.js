@@ -14,7 +14,8 @@ import http from 'http';
 import { ejecutarTektonRonda, ejecutarConvocatoriaTekton } from './arkhe-round.js';
 
 const PORT = process.env.PORT || 3000;
-const A2_PREVIEW_ENABLED = process.env.IS_PULL_REQUEST === 'true' && process.env.ARKHE_A2_PREVIEW === '1';
+const A2_PR_PREVIEW = process.env.IS_PULL_REQUEST === 'true';
+const A2_SMOKE_ENABLED = A2_PR_PREVIEW && process.env.ARKHE_A2_PREVIEW === '1';
 const A2_EXPECTED_INVESTIGATOR_ID = '656726d1-8209-4240-8169-a7434074609d';
 
 
@@ -38,7 +39,7 @@ function autorizadoCore(req) {
 
 const server = http.createServer(async (req, res) => {
   if (req.method === 'GET' && req.url === '/a2/smoke') {
-    if (!A2_PREVIEW_ENABLED) {
+    if (!A2_SMOKE_ENABLED) {
       res.writeHead(404, { 'Content-Type': 'application/json; charset=utf-8' });
       return res.end(JSON.stringify({ ok: false }));
     }
@@ -551,7 +552,7 @@ ${nodo.contenido}`,
   }
 });
 
-if (A2_PREVIEW_ENABLED) {
+if (A2_PR_PREVIEW) {
   console.log('[Tekton] A2 Render preview mode: Discord login disabled.');
 } else {
   client.login(process.env.DISCORD_TOKEN);
