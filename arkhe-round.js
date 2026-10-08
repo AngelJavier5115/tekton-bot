@@ -99,6 +99,18 @@ export async function ejecutarConvocatoriaTekton({ openai, convocatoriaId }) {
   const contenido = textoSeguro(respuesta?.output_text);
   if (!contenido) throw new Error('El motor de Tekton no produjo una intervención utilizable.');
 
+  const modeloSolicitado = process.env.GROQ_MODEL || 'openai/gpt-oss-20b';
+  const modeloObservado = textoSeguro(respuesta?.model);
+  const idRespuestaProveedor = textoSeguro(respuesta?.id);
+
+  if (!modeloObservado) {
+    throw new Error('Tekton no recibió el modelo observado por Groq.');
+  }
+
+  if (!idRespuestaProveedor) {
+    throw new Error('Tekton no recibió un identificador de respuesta de Groq.');
+  }
+
   const persistida = await coreRequest({
     action: 'completar_convocatoria',
     convocatoria_id: convocatoriaId,
@@ -109,13 +121,17 @@ export async function ejecutarConvocatoriaTekton({ openai, convocatoriaId }) {
     responde_a_intervencion_id: contexto.convocatoria.foco_intervencion_id ?? null,
     nodo_id: contexto.ronda?.contexto?.nodo?.id ?? contexto.ronda?.contexto?.nodo_id ?? null,
     identidad_version: contexto.identidad.version,
-    modelo: process.env.GROQ_MODEL || 'openai/gpt-oss-20b',
+    modelo: modeloObservado,
     proveedor: 'Groq',
     metadata: {
       cuerpo: 'discord',
       adaptador: 'tekton-researcher-v2',
       foco_intervencion_id: contexto.convocatoria.foco_intervencion_id,
-      instruccion_humana: contexto.convocatoria.instruccion_humana
+      instruccion_humana: contexto.convocatoria.instruccion_humana,
+      modelo_solicitado: modeloSolicitado,
+      modelo_observado: modeloObservado,
+      id_respuesta_proveedor: idRespuestaProveedor,
+      nivel_procedencia: 'provider-response-attested'
     }
   });
 
