@@ -6,12 +6,16 @@ import {
   SlashCommandBuilder
 } from 'discord.js';
 
+import { coreRequest } from './arkhe-core-client.js';
+
 import { createClient } from '@supabase/supabase-js';
 import OpenAI from 'openai';
 import http from 'http';
 import { ejecutarTektonRonda, ejecutarConvocatoriaTekton } from './arkhe-round.js';
 
 const PORT = process.env.PORT || 3000;
+const A2_PR_PREVIEW = process.env.IS_PULL_REQUEST === 'true';
+
 
 function leerJsonRequest(req) {
   return new Promise((resolve, reject) => {
@@ -511,4 +515,8 @@ ${nodo.contenido}`,
   }
 });
 
-client.login(process.env.DISCORD_TOKEN);
+if (A2_PR_PREVIEW) {
+  console.log('[Tekton] A2 Render preview mode: Discord login disabled.');
+} else {
+  client.login(process.env.DISCORD_TOKEN);
+}
