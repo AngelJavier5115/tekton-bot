@@ -120,3 +120,17 @@ test('tekton signed client rejects human-governance actions before network acces
     globalThis.fetch = previousFetch;
   }
 });
+
+
+test('Tekton Discord command consumes an existing invocation and never opens a debate', async () => {
+  const { readFileSync } = await import('node:fs');
+  const index = readFileSync(new URL('../index.js', import.meta.url), 'utf8');
+  const round = readFileSync(new URL('../arkhe-round.js', import.meta.url), 'utf8');
+  const start = round.indexOf('export async function ejecutarTektonRonda(');
+  const completion = round.slice(start);
+
+  assert.match(index, /setName\('tekton-ronda'\)[\s\S]*?setName\('convocatoria_id'\)/);
+  assert.ok(start >= 0, 'Tekton command handler exists');
+  assert.match(completion, /ejecutarConvocatoriaTekton/);
+  assert.doesNotMatch(completion, /abrir_debate|iniciar_ronda|convocar_investigadores|actor_id/);
+});
