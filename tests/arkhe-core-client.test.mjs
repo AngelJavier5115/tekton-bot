@@ -131,8 +131,8 @@ test('Tekton Discord command consumes an existing invocation and never opens a d
 
   assert.match(index, /setName\('tekton-ronda'\)[\s\S]*?setName\('convocatoria_id'\)/);
   assert.ok(start >= 0, 'Tekton command handler exists');
-  assert.match(completion, /ejecutarConvocatoriaTekton/);
-  assert.doesNotMatch(completion, /abrir_debate|iniciar_ronda|convocar_investigadores|actor_id/);
+  assert.match(completion, /ejecución directa deshabilitada/);
+  assert.doesNotMatch(completion, /ejecutarConvocatoriaTekton|abrir_debate|iniciar_ronda|convocar_investigadores|actor_id/);
 });
 
 
