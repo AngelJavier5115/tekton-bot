@@ -49,9 +49,9 @@ function esErrorTransitorio(error) {
     ['UNAVAILABLE', 'ECONNRESET', 'ECONNREFUSED', 'ETIMEDOUT', 'TIMEOUT'].some(part => message.includes(part));
 }
 
-async function procesarDespachoAceptado({ body, convocatoriaId }) {
+async function procesarDespachoAceptado({ body, dispatchId, convocatoriaId }) {
   try {
-    const resultado = await ejecutarConvocatoriaTekton({ openai, convocatoriaId });
+    const resultado = await ejecutarConvocatoriaTekton({ openai, convocatoriaId, dispatchId });
     const contenidoPublicable =
       resultado?.resultado?.contenido ??
       resultado?.intervencion?.contenido ??
@@ -65,6 +65,7 @@ async function procesarDespachoAceptado({ body, convocatoriaId }) {
         await coreRequest({
           action: 'fallar_convocatoria',
           convocatoria_id: convocatoriaId,
+          dispatch_id: dispatchId,
           investigador_id: '656726d1-8209-4240-8169-a7434074609d'
         });
       } catch (failureError) {
@@ -111,6 +112,7 @@ const server = http.createServer(async (req, res) => {
     setImmediate(() => {
       void procesarDespachoAceptado({
         body: dispatch.body,
+        dispatchId: dispatch.dispatchId,
         convocatoriaId: dispatch.convocatoriaId
       });
     });
