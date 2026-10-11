@@ -127,98 +127,27 @@ export async function ejecutarTektonRonda({
   openai,
   sendLongReply
 }) {
-  if (!openai) {
-    return await interaction.editReply(
-      '[Tekton] ⚠️ El motor de Tekton no está configurado. Falta GROQ_API_KEY.'
-    );
-  }
-
-  const nodoId = interaction.options.getInteger('id', true);
-  const focoIntervencionId = interaction.options.getString('intervencion', true);
-  const instruccion = interaction.options.getString('instruccion', true);
-
-  const ANGEL_ID = '2a003935-f248-442c-96fc-dcee29c4d41a';
-  const TEKTON_ID = '656726d1-8209-4240-8169-a7434074609d';
+  const convocatoriaId = interaction.options.getString('convocatoria_id', true);
 
   try {
-    const debate = await coreRequest({
-      action: 'abrir_debate',
-      actor_id: ANGEL_ID,
-      foco_intervencion_id: focoIntervencionId,
-      investigadores: [TEKTON_ID],
-      pregunta: instruccion,
-      instruccion_humana: instruccion,
-      contexto: {
-        origen: 'discord',
-        cuerpo_investigador: 'tekton',
-        nodo_ancla_id: nodoId
-      }
-    });
-
-    const convocatoria = debate.convocatorias?.[0];
-    if (!convocatoria) {
-      throw new Error('Arkhé Core no creó la convocatoria de Tekton.');
-    }
-
-    const contexto = await coreRequest({
-      action: 'obtener_convocatoria',
-      convocatoria_id: convocatoria.id
-    });
-
-    if (contexto.convocatoria.investigador_id !== TEKTON_ID) {
-      throw new Error('La convocatoria no pertenece a Tekton.');
-    }
-
-    const prompt = construirPromptTekton(contexto);
-
-    const respuesta = await openai.responses.create({
-      model: process.env.GROQ_MODEL || 'openai/gpt-oss-20b',
-      instructions: prompt,
-      input: 'Realiza la intervención solicitada por Ángel. Responde específicamente al foco indicado. No abras otra ronda ni modifiques estados colectivos.',
-      max_output_tokens: 4096,
-      reasoning: { effort: 'medium' }
-    });
-
-    const contenido = textoSeguro(respuesta?.output_text);
-    if (!contenido) {
-      throw new Error('El motor de Tekton no produjo una intervención utilizable.');
-    }
-
-    const persistida = await coreRequest({
-      action: 'completar_convocatoria',
-      convocatoria_id: convocatoria.id,
-      ronda_id: contexto.ronda.id,
-      investigador_id: TEKTON_ID,
-      tipo: 'replica',
-      contenido,
-      responde_a_intervencion_id: contexto.convocatoria.foco_intervencion_id,
-      nodo_id: contexto.ronda?.contexto?.nodo?.id ?? contexto.ronda?.contexto?.nodo_id ?? nodoId,
-      identidad_version: contexto.identidad.version,
-      modelo: process.env.GROQ_MODEL || 'openai/gpt-oss-20b',
-      proveedor: 'Groq',
-      metadata: {
-        cuerpo: 'discord',
-        adaptador: 'tekton-researcher-v2',
-        foco_intervencion_id: contexto.convocatoria.foco_intervencion_id,
-        instruccion_humana: instruccion
-      }
-    });
-
+    const resultado = await ejecutarConvocatoriaTekton({ openai, convocatoriaId });
+    const contenido = textoSeguro(
+      resultado?.intervencion?.contenido ?? resultado?.contenido,
+      'Intervención registrada.'
+    );
     const mensaje =
-      '[Tekton] 🏗️ **Intervención registrada por Arkhé Core.**\n\n' +
-      `**Ronda:** #${contexto.ronda.numero}\n` +
-      `**Tipo:** ${contexto.ronda.tipo}\n` +
-      `**Intervención:** ${persistida.intervencion.id}\n` +
-      `**Responde a:** ${contexto.convocatoria.foco_intervencion_id}\n` +
-      `**Nodo ancla:** #${nodoId}\n\n` +
+      '[Tekton] 🏗️ **Convocatoria existente procesada.**\\n\\n' +
+      '**Convocatoria:** ' + convocatoriaId + '\\n' +
+      '**Ronda:** #' + (resultado?.ronda?.numero ?? 'desconocida') + '\\n' +
+      '**Intervención:** ' + (resultado?.intervencion?.id ?? 'sin ID') + '\\n\\n' +
       contenido;
 
     return await sendLongReply(interaction, mensaje);
   } catch (error) {
-    console.error('[Tekton] Error en ronda:', error);
+    console.error('[Tekton] Error en convocatoria:', error);
     return await interaction.editReply(
-      '[Tekton] ❌ Arkhé Core no pudo completar la convocatoria.\n\n' +
-      `Motivo: ${error?.message || 'error desconocido'}`
+      '[Tekton] ❌ Arkhé Core no pudo completar la convocatoria ' + convocatoriaId + '.\\n\\n' +
+      'Motivo: ' + (error?.message || 'error desconocido')
     );
   }
 }
