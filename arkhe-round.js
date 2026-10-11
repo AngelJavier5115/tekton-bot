@@ -125,32 +125,10 @@ export async function ejecutarConvocatoriaTekton({ openai, convocatoriaId, dispa
   return { ...persistida, ronda: contexto.ronda };
 }
 
-export async function ejecutarTektonRonda({
-  interaction,
-  openai,
-  sendLongReply
-}) {
-  const convocatoriaId = interaction.options.getString('convocatoria_id', true);
-
-  try {
-    const resultado = await ejecutarConvocatoriaTekton({ openai, convocatoriaId });
-    const contenido = textoSeguro(
-      resultado?.intervencion?.contenido ?? resultado?.contenido,
-      'Intervención registrada.'
-    );
-    const mensaje =
-      '[Tekton] 🏗️ **Convocatoria existente procesada.**\\n\\n' +
-      '**Convocatoria:** ' + convocatoriaId + '\\n' +
-      '**Ronda:** #' + (resultado?.ronda?.numero ?? 'desconocida') + '\\n' +
-      '**Intervención:** ' + (resultado?.intervencion?.id ?? 'sin ID') + '\\n\\n' +
-      contenido;
-
-    return await sendLongReply(interaction, mensaje);
-  } catch (error) {
-    console.error('[Tekton] Error en convocatoria:', error);
-    return await interaction.editReply(
-      '[Tekton] ❌ Arkhé Core no pudo completar la convocatoria ' + convocatoriaId + '.\\n\\n' +
-      'Motivo: ' + (error?.message || 'error desconocido')
-    );
-  }
+export async function ejecutarTektonRonda({ interaction }) {
+  return await interaction.editReply(
+    '⛔ **Tekton — ejecución directa deshabilitada.**\\n\\n' +
+    'Una convocatoria sólo puede procesarse después de recibir un despacho firmado, de un solo uso, emitido por Arkhé Core con autorización humana reciente. ' +
+    'Este comando no ejecutó el motor ni contactó al Core.'
+  );
 }
