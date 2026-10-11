@@ -169,10 +169,8 @@ const commands = [
 
   new SlashCommandBuilder()
     .setName('tekton-ronda')
-    .setDescription('Tekton: participa en una ronda dirigida por Ángel')
-    .addIntegerOption(option => option.setName('id').setDescription('ID del nodo ancla de la ronda').setRequired(true))
-    .addStringOption(option => option.setName('intervencion').setDescription('UUID de la intervención a la que Tekton responderá').setRequired(true))
-    .addStringOption(option => option.setName('instruccion').setDescription('Instrucción o pregunta dirigida por Ángel').setRequired(true))
+    .setDescription('Tekton: procesa una convocatoria existente autorizada por Arkhé Core')
+    .addStringOption(option => option.setName('convocatoria_id').setDescription('UUID de una convocatoria pendiente asignada a Tekton').setRequired(true))
 ].map(cmd => cmd.toJSON());
 
 process.on('unhandledRejection', error => console.error('[Tekton] Unhandled Rejection:', error));
