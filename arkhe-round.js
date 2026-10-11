@@ -72,14 +72,16 @@ Señala qué tendría que formalizarse para aumentar la solidez del sistema.
 `;
 }
 
-export async function ejecutarConvocatoriaTekton({ openai, convocatoriaId }) {
+export async function ejecutarConvocatoriaTekton({ openai, convocatoriaId, dispatchId }) {
   const TEKTON_ID = '656726d1-8209-4240-8169-a7434074609d';
   if (!openai) throw new Error('Motor de Tekton no configurado.');
   if (!convocatoriaId) throw new Error('convocatoriaId es obligatorio.');
+  if (!dispatchId) throw new Error('La ejecución requiere un dispatch_id firmado por Arkhé Core.');
 
   const contexto = await coreRequest({
     action: 'obtener_convocatoria',
-    convocatoria_id: convocatoriaId
+    convocatoria_id: convocatoriaId,
+    dispatch_id: dispatchId
   });
 
   if (contexto.convocatoria.investigador_id !== TEKTON_ID) {
@@ -102,6 +104,7 @@ export async function ejecutarConvocatoriaTekton({ openai, convocatoriaId }) {
   const persistida = await coreRequest({
     action: 'completar_convocatoria',
     convocatoria_id: convocatoriaId,
+    dispatch_id: dispatchId,
     ronda_id: contexto.ronda.id,
     investigador_id: TEKTON_ID,
     tipo: contexto.ronda.tipo === 'consulta' ? 'perspectiva' : 'replica',
